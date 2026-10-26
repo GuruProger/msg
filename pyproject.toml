@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "msg"
+version = "0.2.0"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.162.0",
+    "httpx>=0.28",
+    "python-multipart>=0.0.32",
+    "requests>=2.34.2",
+    "websocket-client>=1.9.2",
+    "websockets>=14.2",
+]
+
+[project.scripts]
+dome-panel = "dome_control.cli:main"
+dome-agent = "dome_agent.agent:main"
+
+[tool.setuptools]
+packages = ["dome_control", "dome_agent"]
