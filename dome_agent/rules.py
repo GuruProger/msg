@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
 
-from .analysis import Snapshot, as_bool, as_float, as_int
+from .analysis import Snapshot, as_bool, as_float, as_int, normalize_interlocks
 from .chat import check_cnc_completion, check_print_completion
 from .state import StateStore
 
@@ -42,14 +42,38 @@ def _file_present(node: Mapping[str, Any], filename: str) -> bool:
 
 
 def _interlock(snapshot: Snapshot, name: str) -> dict[str, Any]:
-    interlocks = snapshot.node("dome_automation_01").get("interlocks")
-    value = (interlocks or {}).get(name) if isinstance(interlocks, dict) else None
-    return value if isinstance(value, dict) else {}
+    interlocks = normalize_interlocks(
+        snapshot.node("dome_automation_01").get("interlocks")
+    )
+    return interlocks.get(str(name), {})
+
+
+def _interlock_state(snapshot: Snapshot, name: str) -> str:
+    return _state(_interlock(snapshot, name).get("state"))
+
+
+def _interlock_known_tripped(snapshot: Snapshot, name: str) -> bool:
+    return _interlock_state(snapshot, name) in {"TRIPPED", "BLOCKED", "ALARM"}
 
 
 def _interlock_tripped(snapshot: Snapshot, name: str) -> bool:
+    """Return True unless the interlock is explicitly in a safe state.
+
+    The API has been observed returning interlocks as a list of objects.  A
+    malformed or unknown shape must fail closed; treating it as an empty map
+    would incorrectly clear IL_CO2 and allow a resume.
+    """
+    raw = snapshot.node("dome_automation_01").get("interlocks")
+    if raw is None:
+        return False
+    if not isinstance(raw, (Mapping, list, tuple)):
+        return True
+    if isinstance(raw, (list, tuple)) and raw and not normalize_interlocks(raw):
+        return True
     interlock = _interlock(snapshot, name)
-    return _state(interlock.get("state")) in {"TRIPPED", "BLOCKED", "ALARM"}
+    if not interlock:
+        return False
+    return _state(interlock.get("state")) not in {"ARMED", "CLEAR", "OK", "NORMAL"}
 
 
 def _powder_present(snapshot: Snapshot) -> bool:
@@ -89,10 +113,19 @@ def _fume_ready(snapshot: Snapshot) -> bool:
 
 
 def _choose_alt_co2(snapshot: Snapshot) -> str | None:
+    suspect_ids = set(snapshot.co2.suspect_ids)
+    suspect_zones = {
+        reading.zone
+        for reading in snapshot.co2.readings
+        if reading.node_id in suspect_ids and reading.zone
+    }
     candidates = [
         reading
         for reading in snapshot.co2.readings
-        if reading.valid and reading.node_id not in snapshot.co2.suspect_ids
+        if reading.valid
+        and reading.current
+        and reading.node_id not in suspect_ids
+        and (not suspect_zones or reading.zone in suspect_zones)
     ]
     if not candidates:
         return None
@@ -366,7 +399,7 @@ class RuleEngine:
                 )
                 if primary_action:
                     actions.append(primary_action)
-            if _interlock_tripped(snapshot, "IL_CO2"):
+            if _interlock_known_tripped(snapshot, "IL_CO2"):
                 reset_action = self._action(
                     "co2_reset_interlock",
                     "dome_automation_01",
@@ -446,7 +479,13 @@ class RuleEngine:
 
         # If CO2 is safe again but IL_CO2 is still tripped (the usual state
         # after a false alarm was fixed), release it before resuming.
-        if _interlock_tripped(snapshot, "IL_CO2") and not snapshot.co2.false_alarm and (snapshot.co2.chosen_ppm or 0) < 1800:
+        co2_ppm = snapshot.co2.chosen_ppm
+        if (
+            _interlock_known_tripped(snapshot, "IL_CO2")
+            and not snapshot.co2.false_alarm
+            and co2_ppm is not None
+            and co2_ppm < 1800
+        ):
             action = self._action(
                 "co2_reset_interlock_after_clear",
                 "dome_automation_01",
@@ -715,7 +754,10 @@ class RuleEngine:
                 return False, "CO2 ещё требует разбирательства"
             if _interlock_tripped(snapshot, "IL_CO2"):
                 return False, "IL_CO2 всё ещё TRIPPED"
-            if (snapshot.co2.chosen_ppm or 0) >= 1800:
+            co2_ppm = snapshot.co2.chosen_ppm
+            if co2_ppm is None:
+                return False, "CO2 неизвестен; автоматический resume запрещён"
+            if co2_ppm >= 1800:
                 return False, "CO2 ещё высокий"
             return True, "CO2 в норме"
         if reason == "IL_CONDENSATE":
@@ -738,8 +780,15 @@ class RuleEngine:
                 return False, "вытяжка не даёт рабочий поток"
             return True, "VOC и вытяжка в норме"
         if reason == "UNDERVOLTAGE":
-            voltage = as_float(snapshot.node("smart_panel_01").get("bus_voltage_v"))
-            if voltage is not None and voltage < 200:
+            if not snapshot.online("smart_panel_01"):
+                return False, "щиток недоступен; напряжение не подтверждено"
+            panel = snapshot.node("smart_panel_01")
+            if panel.get("bus_powered") is False:
+                return False, "шина без питания"
+            voltage = as_float(panel.get("bus_voltage_v"))
+            if voltage is None:
+                return False, "напряжение неизвестно; автоматический resume запрещён"
+            if voltage < 200:
                 return False, f"напряжение {voltage:.1f} V"
             return True, "напряжение восстановилось"
         if reason in {"BED_COLLISION", "FILAMENT_RUNOUT"}:

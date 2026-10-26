@@ -37,7 +37,7 @@ from dome_agent.llm import DeepSeekAdvisor, parse_advice
 from dome_agent.logging import AgentLog
 from dome_agent.rules import ActionSpec, RuleEngine
 from dome_agent.state import StateStore
-from dome_agent.verification import ExpectedEffect, expected_effect
+from dome_agent.verification import ExpectedEffect, expected_effect, meaningful_diff
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / "tests/fixtures/telemetry.jsonl"
@@ -51,6 +51,10 @@ def base_telemetry() -> dict:
 def false_co2_telemetry() -> dict:
     data = base_telemetry()
     data["nodes"]["climate_sensor_01"]["co2_ppm"] = 3043
+    # A false-alarm quorum requires current, same-zone peers.  The fixture's
+    # reserve channels are delayed, so make this scenario explicitly current.
+    for sensor in ("climate_sensor_02", "climate_sensor_03"):
+        data["nodes"][sensor]["reading_delay_s"] = 0.0
     data["nodes"]["dome_automation_01"]["interlocks"]["IL_CO2"].update(
         {"state": "TRIPPED", "reason": "CO2"}
     )
@@ -317,6 +321,38 @@ class RuleTests(unittest.TestCase):
         self.assertIn(("set_data_trust", {"node": "climate_sensor_01", "param": "co2_ppm", "trust": "UNRELIABLE"}), actions)
         self.assertLess(actions.index(("set_primary_sensor", "climate_sensor_02")), actions.index(("reset_interlock", "IL_CO2")))
 
+    def test_delayed_co2_backups_do_not_refute_current_trip(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["climate_sensor_01"]["co2_ppm"] = 3000
+        data["nodes"]["dome_automation_01"]["interlocks"]["IL_CO2"]["state"] = "TRIPPED"
+        assessment = analyze_co2(data["nodes"])
+        self.assertEqual(assessment.chosen_id, "climate_sensor_01")
+        self.assertEqual(assessment.chosen_ppm, 3000)
+        self.assertFalse(assessment.false_alarm)
+        self.assertIn("climate_sensor_02", assessment.delayed_ids)
+        self.assertIn("climate_sensor_03", assessment.delayed_ids)
+
+        result = RuleEngine().decide(Snapshot(data))
+        actions = [(action.action, action.value) for action in result.actions]
+        self.assertNotIn(("set_primary_sensor", "climate_sensor_02"), actions)
+        self.assertFalse(any(action == "set_data_trust" for action, _ in actions))
+        self.assertFalse(any(action == "reset_interlock" for action, _ in actions))
+        self.assertTrue(
+            any(action in {"turn_on", "set_mode"} for action, _ in actions)
+        )
+        self.assertFalse(any(action == "resume" for action, _ in actions))
+
+    def test_other_zone_safe_sensor_does_not_refute_current_trip(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["climate_sensor_01"]["co2_ppm"] = 3000
+        for sensor in ("climate_sensor_02", "climate_sensor_03"):
+            data["nodes"][sensor]["reading_delay_s"] = 0.0
+            data["nodes"][sensor]["zone"] = "STORAGE"
+        data["nodes"]["dome_automation_01"]["interlocks"]["IL_CO2"]["state"] = "TRIPPED"
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "reset_interlock" for action in result.actions))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
     def test_real_co2_ventilates_and_does_not_resume(self) -> None:
         result = RuleEngine().decide(Snapshot(real_co2_telemetry()))
         self.assertTrue(any(action.action == "set_mode" and action.value == "FRESH_AIR" for action in result.actions))
@@ -335,6 +371,49 @@ class RuleTests(unittest.TestCase):
         }
         result = RuleEngine().decide(Snapshot(data), task)
         self.assertTrue(any(message.dedupe_key == "line3:alarm" for message in result.messages))
+
+    def test_interlock_list_is_normalized_and_blocks_resume(self) -> None:
+        data = base_telemetry()
+        automation = data["nodes"]["dome_automation_01"]
+        automation["interlocks"] = [
+            {"id": name, **entry}
+            for name, entry in automation["interlocks"].items()
+        ]
+        for entry in automation["interlocks"]:
+            if entry["id"] == "IL_CO2":
+                entry["state"] = "TRIPPED"
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CO2"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
+    def test_malformed_interlocks_fail_closed(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["dome_automation_01"]["interlocks"] = "broken"
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CO2"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+        self.assertFalse(any(action.action == "reset_interlock" for action in result.actions))
+
+    def test_missing_co2_does_not_reset_interlock(self) -> None:
+        data = base_telemetry()
+        for sensor in ("climate_sensor_01", "climate_sensor_02", "climate_sensor_03"):
+            data["nodes"][sensor]["co2_ppm"] = None
+        data["nodes"]["dome_automation_01"]["interlocks"]["IL_CO2"]["state"] = "TRIPPED"
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "reset_interlock" for action in result.actions))
+
+    def test_missing_voltage_does_not_resume(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["smart_panel_01"]["bus_voltage_v"] = None
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "UNDERVOLTAGE"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
 
     def test_unknown_hold_reason_is_not_resumed(self) -> None:
         data = base_telemetry()
@@ -364,6 +443,7 @@ class RuleTests(unittest.TestCase):
         data = base_telemetry()
         data["nodes"]["climate_sensor_01"]["co2_ppm"] = 760
         data["nodes"]["climate_sensor_02"]["co2_ppm"] = 3000
+        data["nodes"]["climate_sensor_02"]["reading_delay_s"] = 0.0
         data["nodes"]["climate_sensor_03"]["co2_ppm"] = None
         assessment = analyze_co2(data["nodes"])
         self.assertEqual(assessment.chosen_ppm, 3000)
@@ -772,6 +852,30 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(observed, {"changed": True})
             self.assertIsNone(error)
 
+    async def test_unknown_action_metadata_only_diff_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="test-unknown-metadata",
+                node_id="smart_panel_01",
+                action="mystery_action",
+                reason="test unknown metadata",
+            )
+            diff = {"node_id": "smart_panel_01", "action": "mystery_action"}
+            result = {
+                "success": True,
+                "diff": diff,
+                "after": copy.deepcopy(base_telemetry()["nodes"]["smart_panel_01"]),
+                "verify_error": None,
+            }
+            ok, observed, error = await agent._verify_action(action, result)
+            self.assertFalse(ok)
+            self.assertEqual(observed, diff)
+            self.assertIsNone(error)
+
     async def test_run_seconds_stops_without_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=True, run_seconds=0.2)
@@ -786,6 +890,47 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
 
 
 class VerificationTests(unittest.TestCase):
+    def test_fan_effect_requires_physical_state(self) -> None:
+        effect = expected_effect("solar_inverter_01", "set_fan", "ON")
+        self.assertFalse(
+            effect.check({"fan_mode": "ON", "fan_state": "OFF", "fan_current_a": 0.0})
+        )
+        self.assertFalse(
+            effect.check({"fan_state": "ON", "fan_current_a": 0.0})
+        )
+        self.assertTrue(
+            effect.check({"fan_state": "ON", "fan_current_a": 0.25})
+        )
+        off = expected_effect("solar_inverter_01", "set_fan", "OFF")
+        self.assertTrue(
+            off.check({"fan_state": "OFF", "fan_current_a": 0.0})
+        )
+        self.assertFalse(
+            off.check({"fan_state": "OFF"})
+        )
+
+    def test_reset_interlock_effect_accepts_list_shape(self) -> None:
+        effect = expected_effect(
+            "dome_automation_01", "reset_interlock", "IL_CO2"
+        )
+        self.assertTrue(
+            effect.check(
+                {
+                    "interlocks": [
+                        {"id": "IL_CO2", "state": "ARMED"},
+                        {"id": "IL_SMOKE", "state": "TRIPPED"},
+                    ]
+                }
+            )
+        )
+        self.assertFalse(
+            effect.check({"interlocks": [{"id": "IL_CO2", "state": "TRIPPED"}]})
+        )
+
+    def test_metadata_only_diff_is_not_a_physical_effect(self) -> None:
+        self.assertFalse(meaningful_diff({"node_id": "smart_panel_01", "action": "line_off"}))
+        self.assertTrue(meaningful_diff({"line": 8, "state": "OFF"}))
+
     def test_expected_effect_line_and_unknown_action(self) -> None:
         effect = expected_effect("smart_panel_01", "line_off", 8)
         self.assertTrue(effect.check({"lines": [{"line": 8, "state": "OFF"}]}))

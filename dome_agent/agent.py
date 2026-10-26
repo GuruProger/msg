@@ -46,7 +46,7 @@ from .llm import Advice, DeepSeekAdvisor
 from .logging import AgentLog
 from .rules import NO_VALUE, ActionSpec, OutgoingMessage, RuleEngine, RuleResult
 from .state import StateStore
-from .verification import ExpectedEffect, expected_effect
+from .verification import ExpectedEffect, expected_effect, meaningful_diff
 
 CHAT_POLL_INTERVAL_S = 3.0
 TELEMETRY_MAX_AGE_S = 5.0
@@ -813,7 +813,7 @@ class DomeAgent:
         if confirmed is None:
             diff = result.get("diff")
             return (
-                bool(diff),
+                meaningful_diff(diff),
                 diff if diff is not None else expected.observe(after),
                 result.get("verify_error"),
             )
@@ -1268,7 +1268,7 @@ class DomeAgent:
         if confirmed is None:
             diff = response.get("diff")
             return (
-                bool(diff),
+                meaningful_diff(diff),
                 diff if diff is not None else expect.observe(after),
                 response.get("verify_error"),
             )

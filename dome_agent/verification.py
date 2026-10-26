@@ -11,9 +11,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
-from .analysis import as_bool
+from .analysis import as_bool, as_float, normalize_interlocks
 
 DEFAULT_TIMEOUT_S = 6.0
+_DIFF_METADATA_KEYS = {
+    "accepted",
+    "action",
+    "node_id",
+    "request_id",
+    "success",
+    "timestamp",
+    "updated_at",
+    "verified",
+}
+
+
+def meaningful_diff(value: Any) -> bool:
+    """Return True only when a diff contains a non-metadata change.
+
+    A command acknowledgement may include ``node_id`` or ``action``; that is
+    not proof of a physical effect.  Known actions use explicit predicates;
+    this fallback is only for actions without a predicate.
+    """
+    if not isinstance(value, Mapping):
+        return False
+    return any(str(key).casefold() not in _DIFF_METADATA_KEYS for key in value)
 
 
 def _upper(value: Any) -> str:
@@ -81,10 +103,7 @@ def _action_confirmed(
     if name == "set_primary_sensor":
         return str(node.get("primary_co2_sensor") or "").strip() == str(value or "").strip()
     if name == "reset_interlock":
-        interlocks = node.get("interlocks")
-        if not isinstance(interlocks, Mapping):
-            return False
-        entry = interlocks.get(str(value))
+        entry = normalize_interlocks(node.get("interlocks")).get(str(value))
         if not isinstance(entry, Mapping):
             return False
         return _upper(entry.get("state")) not in {"TRIPPED", "BLOCKED", "ALARM"}
@@ -92,7 +111,13 @@ def _action_confirmed(
         return not as_bool(node.get("error")) and not node.get("error_code")
     if name == "set_fan":
         expected = _upper(value)
-        return _upper(node.get("fan_state")) == expected or _upper(node.get("fan_mode")) == expected
+        fan_state = _upper(node.get("fan_state"))
+        current = as_float(node.get("fan_current_a"))
+        if expected in {"ON", "1", "TRUE"}:
+            return fan_state == "ON" and current is not None and current > 0.01
+        if expected in {"OFF", "0", "FALSE"}:
+            return fan_state == "OFF" and current is not None and current <= 0.01
+        return False
     if name == "set_data_trust":
         trust = node.get("data_trust")
         if not isinstance(trust, Mapping) or not isinstance(value, Mapping):
@@ -131,14 +156,13 @@ def _observed(node_id: str, action: str, value: Any, node: Any) -> dict[str, Any
     elif name in {"turn_on", "set_mode"}:
         keys = ("state", "enabled", "mode", "airflow_pct")
     elif name == "set_fan":
-        keys = ("fan_state", "fan_mode", "inverter_temp_c")
+        keys = ("fan_state", "fan_mode", "fan_current_a", "inverter_temp_c")
     elif name == "reset_error":
         keys = ("state", "error", "error_code")
     elif name == "set_primary_sensor":
         keys = ("primary_co2_sensor",)
     elif name == "reset_interlock":
-        interlocks = node.get("interlocks")
-        entry = interlocks.get(str(value)) if isinstance(interlocks, Mapping) else None
+        entry = normalize_interlocks(node.get("interlocks")).get(str(value))
         return {"interlock": value, "entry": entry}
     elif name == "set_data_trust":
         return {"data_trust": node.get("data_trust")}

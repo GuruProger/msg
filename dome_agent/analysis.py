@@ -62,6 +62,38 @@ def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def normalize_interlocks(value: Any) -> dict[str, dict[str, Any]]:
+    """Normalize the API interlock map and the observed list form.
+
+    The live API may return either ``{"IL_CO2": {...}}`` or
+    ``[{"id": "IL_CO2", ...}]``.  Unknown entries are ignored here; callers
+    that make safety decisions must treat a malformed raw value as unknown,
+    not as ARMED.
+    """
+    if isinstance(value, Mapping):
+        return {
+            str(name): dict(entry)
+            for name, entry in value.items()
+            if isinstance(entry, Mapping)
+        }
+    if isinstance(value, (list, tuple)):
+        result: dict[str, dict[str, Any]] = {}
+        for entry in value:
+            if not isinstance(entry, Mapping):
+                continue
+            name = (
+                entry.get("id")
+                or entry.get("name")
+                or entry.get("interlock")
+                or entry.get("key")
+            )
+            if name is None:
+                continue
+            result[str(name)] = dict(entry)
+        return result
+    return {}
+
+
 def _node_online(node: Mapping[str, Any]) -> bool:
     if not node:
         return False
@@ -93,6 +125,24 @@ class Co2Reading:
     state: str
     confidence: float | None
     reason: str
+    zone: str
+    reading_delay_s: float | None
+
+    @property
+    def current(self) -> bool:
+        """Whether this value can participate in a current quorum.
+
+        Delay semantics are not confirmed yet.  Any positive ``reading_delay_s``
+        means the packet may contain an older physical measurement, so the
+        reading is retained for history but excluded from current decisions.
+        """
+        return self.valid and (self.reading_delay_s is None or self.reading_delay_s <= 0.0)
+
+    @property
+    def quality(self) -> str:
+        if not self.valid:
+            return "INVALID"
+        return "CURRENT" if self.current else "DELAYED"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -103,6 +153,10 @@ class Co2Reading:
             "state": self.state,
             "confidence": self.confidence,
             "reason": self.reason,
+            "zone": self.zone,
+            "reading_delay_s": self.reading_delay_s,
+            "current": self.current,
+            "quality": self.quality,
         }
 
 
@@ -119,6 +173,7 @@ class Co2Assessment:
     unreliable_ids: tuple[str, ...]
     override_used: bool
     override_ignored: bool
+    delayed_ids: tuple[str, ...]
     reason: str
 
     @property
@@ -148,6 +203,7 @@ class Co2Assessment:
             "unreliable_ids": list(self.unreliable_ids),
             "override_used": self.override_used,
             "override_ignored": self.override_ignored,
+            "delayed_ids": list(self.delayed_ids),
             "reason": self.reason,
             "readings": [reading.as_dict() for reading in self.readings],
         }
@@ -190,9 +246,10 @@ def analyze_co2(
 
     A single sensor reporting a physically impossible jump (for example
     3043 ppm while the other two report ~780 ppm) is marked suspect.  The
-    assessment never hides the raw readings: it exposes both the consensus
-    value and the suspect ids so the rule engine and the chat message can
-    explain the decision.
+    assessment never hides the raw readings: it exposes the consensus value,
+    suspect ids, and delayed channels.  A reading with positive
+    ``reading_delay_s`` may describe an older measurement, so it is retained
+    for history but excluded from the current false-alarm quorum.
     """
     readings: list[Co2Reading] = []
     ids = list(CO2_SENSORS)
@@ -212,18 +269,58 @@ def analyze_co2(
                 state=_state(node.get("sensor_state") or node.get("state") or "UNKNOWN"),
                 confidence=as_float(node.get("confidence")),
                 reason=reason,
+                zone=str(node.get("zone") or "").strip().upper(),
+                reading_delay_s=as_float(node.get("reading_delay_s")),
             )
         )
 
-    valid_values = [(index, reading.ppm) for index, reading in enumerate(readings) if reading.valid and reading.ppm is not None]
-    values = [value for _, value in valid_values]
-    suspect_indices = _isolated_indices([(index, float(value)) for index, value in valid_values])
-    suspect_ids = tuple(readings[index].node_id for index in sorted(suspect_indices))
-    reliable_values = [
+    valid_values = [
+        (index, reading.ppm)
+        for index, reading in enumerate(readings)
+        if reading.valid and reading.ppm is not None
+    ]
+    values = [float(value) for _, value in valid_values]
+    current_values = [
         (index, float(value))
         for index, value in valid_values
-        if index not in suspect_indices
+        if readings[index].current
     ]
+    # Only readings comparable in time can create a current "two against one"
+    # quorum.  Delayed reserve channels remain visible in the assessment but
+    # cannot refute a fresh alarm or make a fresh high reading look isolated.
+    suspect_indices = _isolated_indices(current_values)
+    suspect_ids = tuple(readings[index].node_id for index in sorted(suspect_indices))
+
+    false_alarm = False
+    for index in suspect_indices:
+        suspect_ppm = readings[index].ppm or 0.0
+        if suspect_ppm < CO2_TRIP_PPM:
+            continue
+        zone = readings[index].zone
+        if not zone:
+            continue
+        same_zone_safe = [
+            value
+            for other_index, value in current_values
+            if other_index != index
+            and readings[other_index].zone == zone
+            and value < CO2_TRIP_PPM
+        ]
+        if len(same_zone_safe) >= 2:
+            false_alarm = True
+            break
+
+    if false_alarm:
+        reliable_values = [
+            (index, float(value))
+            for index, value in valid_values
+            if index not in suspect_indices
+        ]
+    else:
+        # A suspect reading is only excluded after the false-alarm quorum is
+        # established.  Otherwise keep it in the safety path and choose the
+        # highest current value below, so an unconfirmed spike cannot clear IL.
+        reliable_values = [(index, float(value)) for index, value in valid_values]
     reliable = [value for _, value in reliable_values]
     median = statistics.median(reliable) if reliable else (statistics.median(values) if values else None)
 
@@ -239,46 +336,68 @@ def analyze_co2(
         readings[index].node_id: (index, float(value))
         for index, value in valid_values
     }
+    current_high = [
+        (index, value)
+        for index, value in current_values
+        if value >= CO2_TRIP_PPM
+    ]
 
-    if override_id:
-        candidate = valid_by_id.get(override_id)
-        if candidate is not None and candidate[0] not in suspect_indices:
-            chosen_index, chosen_ppm = candidate
-            override_used = True
-        else:
-            override_ignored = True
+    if current_high and not false_alarm:
+        # Safety-first choice: a current high reading wins over delayed,
+        # other-zone, or historical overrides until it is confirmed false.
+        chosen_index, chosen_ppm = max(current_high, key=lambda item: item[1])
+    else:
+        if override_id:
+            candidate = valid_by_id.get(override_id)
+            if (
+                candidate is not None
+                and candidate[0] not in suspect_indices
+                and readings[candidate[0]].current
+            ):
+                chosen_index, chosen_ppm = candidate
+                override_used = True
+            else:
+                override_ignored = True
 
-    if chosen_index is None and reliable_values:
-        chosen_index, chosen_ppm = min(
-            reliable_values,
-            key=lambda item: abs(item[1] - float(median)),
-        )
+        if chosen_index is None and reliable_values:
+            current_reliable = [
+                (index, value)
+                for index, value in reliable_values
+                if readings[index].current
+            ]
+            pool = current_reliable or reliable_values
+            chosen_index, chosen_ppm = min(
+                pool,
+                key=lambda item: abs(item[1] - float(median)),
+            )
 
-    if chosen_index is None and values:
-        # No trustworthy cluster: keep the highest reading so safety rules
-        # fail closed instead of silently trusting the lowest sensor.
-        chosen_index, chosen_ppm = max(valid_values, key=lambda item: item[1])
+        if chosen_index is None and values:
+            # No trustworthy cluster: keep the highest reading so safety rules
+            # fail closed instead of silently trusting the lowest sensor.
+            chosen_index, chosen_ppm = max(
+                ((index, float(value)) for index, value in valid_values),
+                key=lambda item: item[1],
+            )
 
     chosen_id = readings[chosen_index].node_id if chosen_index is not None else None
     spread = (max(reliable) - min(reliable)) if len(reliable) >= 2 else None
     consensus = bool(len(reliable) >= 2 and spread is not None and spread <= CO2_CONSENSUS_SPREAD_PPM)
     high_reliable = sum(1 for value in reliable if value >= CO2_TRIP_PPM)
-    false_alarm = bool(
-        suspect_ids
-        and reliable
-        and max(reliable) < CO2_TRIP_PPM
-        and any((readings[index].ppm or 0.0) >= CO2_TRIP_PPM for index in suspect_indices)
-    )
     real_event = bool(high_reliable >= 2 and (consensus or high_reliable >= max(2, len(reliable))))
+    delayed_ids = tuple(
+        reading.node_id for reading in readings if reading.valid and not reading.current
+    )
 
     if not values:
         reason = "no reliable CO2 sensor"
     elif false_alarm:
-        reason = "high reading is isolated; other sensors agree on a safe level"
+        reason = "high current reading is isolated; same-zone current sensors agree on a safe level"
     elif real_event:
         reason = "CO2 is high on at least two independent sensors"
     elif consensus:
         reason = "CO2 sensors agree"
+    elif current_high:
+        reason = "current CO2 is high; delayed or other-zone readings cannot refute it"
     elif len(values) == 1:
         reason = "only one CO2 sensor is usable; treat as unconfirmed"
     elif suspect_ids:
@@ -298,6 +417,7 @@ def analyze_co2(
         unreliable_ids=tuple(reading.node_id for reading in readings if not reading.valid),
         override_used=override_used,
         override_ignored=override_ignored,
+        delayed_ids=delayed_ids,
         reason=reason,
     )
 
@@ -663,7 +783,7 @@ class Snapshot:
             add("warning", "LOW_STOCK", "material_inventory_01", str(warning))
 
         automation = self.node("dome_automation_01")
-        for name, interlock in _dict(automation.get("interlocks")).items():
+        for name, interlock in normalize_interlocks(automation.get("interlocks")).items():
             if not isinstance(interlock, dict):
                 continue
             state = _state(interlock.get("state"))
@@ -716,7 +836,7 @@ class Snapshot:
                 }
                 for alert in self.alerts()
             ],
-            "interlocks": _dict(self.node("dome_automation_01").get("interlocks")),
+            "interlocks": normalize_interlocks(self.node("dome_automation_01").get("interlocks")),
             "recent_events": list(self.node("dome_automation_01").get("events") or [])[-5:],
         }
 
