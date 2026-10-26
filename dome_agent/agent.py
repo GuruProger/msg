@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import re
 import signal
 import sys
 import time
@@ -31,6 +32,16 @@ from dome_control.client import (
 from .analysis import Snapshot, as_bool
 from .chat import ChatMessage, new_operator_messages, parse_operator_task
 from .config import AgentConfig
+from .control import (
+    HARD_DENY_ACTIONS,
+    DomeTool,
+    ModelCommand,
+    ModelDecision,
+    PendingProposal,
+    compact_catalog,
+    is_auto_protective,
+)
+from .gate import CommandGate
 from .llm import Advice, DeepSeekAdvisor
 from .logging import AgentLog
 from .rules import NO_VALUE, ActionSpec, OutgoingMessage, RuleEngine, RuleResult
@@ -40,6 +51,35 @@ CHAT_POLL_INTERVAL_S = 3.0
 TELEMETRY_MAX_AGE_S = 5.0
 LOOP_INTERVAL_S = 1.0
 LLM_MESSAGE_MIN_INTERVAL_S = 600.0
+LLM_CONTROL_INTERVAL_S = 10.0
+PENDING_TTL_S = 300.0
+
+_CONFIRM_WORDS = {"да", "подтверждаю", "выполняй", "выполнить", "ок", "давай", "yes", "confirm"}
+_CANCEL_WORDS = {"отмена", "отменить", "не надо", "нет", "стоп", "cancel", "no", "stop"}
+_FORCE_WORDS = {"принудительно", "force", "форсируй"}
+
+
+def _flat(text: Any) -> str:
+    return re.sub(r"[^0-9a-zа-яё]+", " ", str(text or "").casefold()).strip()
+
+
+def _reply_kind(text: Any, *, awaiting_force: bool = False) -> str | None:
+    """Classify an operator reply to a pending proposal."""
+    flat = _flat(text)
+    if not flat:
+        return None
+    words = set(flat.split())
+    if words & _CANCEL_WORDS or flat in _CANCEL_WORDS:
+        return "cancel"
+    if words & _FORCE_WORDS or "принудительно" in flat:
+        return "force"
+    if words & _CONFIRM_WORDS:
+        return "force" if awaiting_force else "confirm"
+    return None
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _safe_text(value: Any, limit: int = 500) -> str:
@@ -192,6 +232,7 @@ class DomeAgent:
         state: StateStore | None = None,
         rules: RuleEngine | None = None,
         advisor: DeepSeekAdvisor | None = None,
+        gate: CommandGate | None = None,
     ) -> None:
         self.config = config
         self.log = log or AgentLog(
@@ -206,7 +247,12 @@ class DomeAgent:
             timeout=config.telemetry_timeout_s,
             min_send_gap=config.min_send_gap_s,
         )
-        self.rules = rules or RuleEngine(self.state)
+        self.gate = gate or CommandGate(
+            config.policy_file,
+            control_enabled=config.control_enabled,
+            yolo=config.yolo,
+        )
+        self.rules = rules or RuleEngine(self.state, yolo=config.yolo)
         self.advisor = advisor or DeepSeekAdvisor(config, self.log)
 
         self._stop = asyncio.Event()
@@ -222,7 +268,14 @@ class DomeAgent:
         self._last_observed_situation: str | None = None
         self._last_alert_key: tuple[tuple[str, str], ...] = ()
         self._dry_run_seen: set[str] = set()
+        self._blocked_seen: set[str] = set()
         self._advice_task: asyncio.Task[None] | None = None
+        self._control_task: asyncio.Task[None] | None = None
+        self._last_control_at = 0.0
+        self._pending: PendingProposal | None = None
+        self._incoming: list[ChatMessage] = []
+        self._llm_notice_sent = False
+        self.tool = DomeTool(self.api)
         self._recent_chat: deque[dict[str, str]] = deque(maxlen=8)
         self._sent_message_times: deque[float] = deque()
         self._guest_notice_logged = False
@@ -232,6 +285,10 @@ class DomeAgent:
             "decisions": 0,
             "actions": 0,
             "action_failures": 0,
+            "actions_blocked": 0,
+            "proposals": 0,
+            "confirmations": 0,
+            "llm_commands": 0,
             "messages": 0,
             "reconnects": 0,
         }
@@ -309,16 +366,17 @@ class DomeAgent:
                 )
             except Exception:
                 pass
-        advice_task = self._advice_task
-        self._advice_task = None
-        if advice_task is not None and not advice_task.done():
-            advice_task.cancel()
-            try:
-                await advice_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
+        for task_attr in ("_control_task", "_advice_task"):
+            task = getattr(self, task_attr, None)
+            setattr(self, task_attr, None)
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
         try:
             await self.advisor.close()
         except Exception:
@@ -456,16 +514,33 @@ class DomeAgent:
         await self._poll_chat(snapshot)
 
         decision = self.rules.decide(snapshot, self.state.task)
+        if decision.task_changed and decision.task is not None:
+            self._save_task(decision.task)
+
+        if self.config.mode == "yolo":
+            # YOLO: the LLM is the primary decision-maker. Rule actions are
+            # context only and are never executed directly.
+            self._maybe_observe(snapshot, decision)
+            await self._schedule_llm_control(snapshot, decision)
+            return
+
+        if self.config.mode == "normal":
+            await self._handle_pending()
+
         if self._should_log_decision(snapshot, decision):
             decision_ref = self._log_decision(snapshot, decision)
         else:
             decision_ref = None
 
-        if decision.task_changed and decision.task is not None:
-            self._save_task(decision.task)
-
-        for action in sorted(decision.actions, key=lambda item: -item.priority):
-            await self._execute_action(action, decision_ref)
+        if self.config.mode == "auto" or self.config.dry_run:
+            for action in sorted(decision.actions, key=lambda item: -item.priority):
+                await self._execute_action(action, decision_ref)
+        else:
+            # NORMAL: only the explicitly approved protective exceptions are
+            # automatic. Everything else is proposed by the LLM and confirmed.
+            for action in sorted(decision.actions, key=lambda item: -item.priority):
+                if is_auto_protective(action):
+                    await self._execute_protective(action, decision_ref)
 
         for message in decision.messages:
             await self._send_operator_message(
@@ -475,7 +550,10 @@ class DomeAgent:
                 to=message.to,
             )
 
-        self._schedule_advice(snapshot, decision)
+        if self.config.mode == "normal":
+            await self._schedule_llm_control(snapshot, decision)
+        else:
+            self._schedule_advice(snapshot, decision)
         self._maybe_observe(snapshot, decision)
 
     # ------------------------------------------------------------------
@@ -540,6 +618,7 @@ class DomeAgent:
 
     def _on_operator_message(self, message: ChatMessage) -> None:
         self.stats["chat_messages"] += 1
+        self._incoming.append(message)
         self._recent_chat.append({"direction": "in", "text": message.text[:700]})
         self.log.write(
             "message",
@@ -616,6 +695,20 @@ class DomeAgent:
                 return
             self._dry_run_seen.add(action.key)
         request = action.request()
+        decision = self.gate.check(action, dry_run=self.config.dry_run)
+        if not decision.allowed:
+            if action.key not in self._blocked_seen:
+                self._blocked_seen.add(action.key)
+                self.stats["actions_blocked"] += 1
+                self.log.write(
+                    "action_blocked",
+                    request=request,
+                    reason=decision.reason,
+                    unsafe=decision.unsafe,
+                    ref=decision_ref,
+                )
+            return
+        verify = action.verify and not self.config.yolo
         started = time.perf_counter()
         try:
             if action.value is NO_VALUE:
@@ -623,7 +716,7 @@ class DomeAgent:
                     action.node_id,
                     action.action,
                     dry_run=self.config.dry_run,
-                    verify=action.verify,
+                    verify=verify,
                     max_age=TELEMETRY_MAX_AGE_S,
                 )
             else:
@@ -632,7 +725,7 @@ class DomeAgent:
                     action.action,
                     action.value,
                     dry_run=self.config.dry_run,
-                    verify=action.verify,
+                    verify=verify,
                     max_age=TELEMETRY_MAX_AGE_S,
                 )
             success = bool(
@@ -657,13 +750,14 @@ class DomeAgent:
                 response=response,
                 reason=action.reason,
                 dry_run=self.config.dry_run,
+                unsafe=decision.unsafe,
                 latency_ms=round((time.perf_counter() - started) * 1000.0, 1),
                 ref=decision_ref,
             )
             self.stats["actions"] += 1
             verified = True
             verification_error = None
-            if action.verify and not self.config.dry_run:
+            if verify and not self.config.dry_run:
                 verified, observed, verification_error = await self._verify_action(action, result)
                 self.log.write(
                     "verification",
@@ -698,6 +792,7 @@ class DomeAgent:
                 response={"success": False, "error": "connection failure"},
                 reason=action.reason,
                 dry_run=self.config.dry_run,
+                unsafe=decision.unsafe,
                 ref=decision_ref,
             )
             if not self.config.dry_run:
@@ -712,6 +807,7 @@ class DomeAgent:
                 response={"success": False, "error": f"{type(exc).__name__}: {exc}"},
                 reason=action.reason,
                 dry_run=self.config.dry_run,
+                unsafe=decision.unsafe,
                 ref=decision_ref,
             )
             if not self.config.dry_run:
@@ -844,6 +940,475 @@ class DomeAgent:
             wait = 10.0 - (now - self._sent_message_times[0])
             if wait > 0:
                 await self._sleep(wait)
+
+    # ------------------------------------------------------------------
+    # operator confirmation and model control
+    # ------------------------------------------------------------------
+
+    async def _handle_pending(self) -> None:
+        pending = self._pending
+        if pending is None:
+            return
+        now = time.time()
+        if pending.expired(now, PENDING_TTL_S):
+            self._pending = None
+            await self._send_operator_message(
+                "Предложение устарело (5 минут). Ничего не выполнено.",
+                dedupe_key=f"pending-expired:{_digest(pending.message)}",
+                min_interval_s=0,
+            )
+            return
+
+        remaining: list[ChatMessage] = []
+        handled_reply = False
+        for message in self._incoming:
+            if not handled_reply:
+                kind = _reply_kind(
+                    message.text,
+                    awaiting_force=bool(self._pending and self._pending.awaiting_force),
+                )
+                if kind == "cancel":
+                    self._pending = None
+                    handled_reply = True
+                    await self._send_operator_message(
+                        "Отменено. Команды не отправлены.",
+                        dedupe_key=f"cancel:{message.id}",
+                        min_interval_s=0,
+                    )
+                    continue
+                if kind == "force":
+                    handled_reply = True
+                    await self._execute_pending(force=True)
+                    continue
+                if kind == "confirm":
+                    handled_reply = True
+                    await self._execute_pending(force=False)
+                    continue
+            remaining.append(message)
+        self._incoming = remaining
+
+    async def _execute_pending(self, *, force: bool) -> None:
+        pending = self._pending
+        if pending is None:
+            return
+        self.stats["confirmations"] += 1
+        results = await self._execute_model_commands(
+            pending.commands,
+            force=force,
+            source="confirmed_force" if force else "confirmed",
+        )
+        blocked = [
+            (command, result)
+            for command, result in results
+            if result.get("blocked") and result.get("forceable")
+        ]
+        if blocked and not force:
+            blocked_commands = tuple(command for command, _ in blocked)
+            reasons = "; ".join(
+                str(result.get("error") or "policy denied")[:200]
+                for _, result in blocked
+            )
+            self._pending = PendingProposal(
+                commands=blocked_commands,
+                message=pending.message,
+                created_at=time.time(),
+                source=pending.source,
+                awaiting_force=True,
+                analysis=pending.analysis,
+                risk=pending.risk,
+            )
+            await self._send_operator_message(
+                "Заблокировано политикой: "
+                f"{reasons}.\n"
+                "Выполнить принудительно? (да, принудительно / отмена)",
+                dedupe_key=f"force:{_digest(reasons)}",
+                min_interval_s=0,
+            )
+            return
+        self._pending = None
+        summary = self._format_model_results(results)
+        await self._send_operator_message(
+            summary,
+            dedupe_key=f"result:{_digest(summary)}",
+            min_interval_s=0,
+        )
+
+    async def _execute_protective(
+        self,
+        action: ActionSpec,
+        decision_ref: int | None,
+    ) -> None:
+        gate_decision = self.gate.check(action, dry_run=self.config.dry_run)
+        if gate_decision.allowed:
+            await self._execute_action(action, decision_ref)
+            return
+        key = f"protective:{action.key}"
+        if key not in self._blocked_seen:
+            self._blocked_seen.add(key)
+            self.stats["actions_blocked"] += 1
+            self.log.write(
+                "action_blocked",
+                request=action.request(),
+                reason=gate_decision.reason,
+                unsafe=False,
+                source="protective",
+                forceable=bool(self.config.control_enabled),
+                ref=decision_ref,
+            )
+        if not self.config.control_enabled:
+            return
+        command = ModelCommand.from_action(action)
+        self._pending = PendingProposal(
+            commands=(command,),
+            message=(
+                f"Защитное действие {action.node_id}.{action.action} "
+                f"заблокировано: {gate_decision.reason}"
+            ),
+            created_at=time.time(),
+            source="protective",
+            awaiting_force=True,
+        )
+        self.stats["proposals"] += 1
+        await self._send_operator_message(
+            f"Защитное действие {action.node_id}.{action.action} заблокировано: "
+            f"{gate_decision.reason}.\n"
+            "Выполнить принудительно? (да, принудительно / отмена)",
+            dedupe_key=f"protective-force:{_digest(action.key)}",
+            min_interval_s=0,
+        )
+
+    async def _schedule_llm_control(
+        self,
+        snapshot: Snapshot,
+        decision: RuleResult,
+    ) -> None:
+        if not self.advisor.available:
+            if not self._llm_notice_sent:
+                self._llm_notice_sent = True
+                self.log.write(
+                    "error",
+                    where="llm_control",
+                    error="LLM is not configured; no model commands will run",
+                )
+                await self._send_operator_message(
+                    "LLM недоступна: новые команды не выполняю.",
+                    dedupe_key="llm-unavailable",
+                    min_interval_s=600,
+                )
+            self._incoming.clear()
+            return
+        if self._control_task is not None and not self._control_task.done():
+            return
+        force = bool(self._incoming)
+        now = time.monotonic()
+        interval = max(LLM_CONTROL_INTERVAL_S, self.config.llm_min_interval_s)
+        if not force and (now - self._last_control_at) < interval:
+            return
+        messages = list(self._incoming)
+        self._incoming.clear()
+        self._last_control_at = now
+        self._control_task = asyncio.create_task(
+            self._run_llm_control(snapshot, decision, messages, force=force),
+            name="dome-agent-control",
+        )
+
+    async def _run_llm_control(
+        self,
+        snapshot: Snapshot,
+        decision: RuleResult,
+        messages: list[ChatMessage],
+        *,
+        force: bool,
+    ) -> None:
+        try:
+            context = await self._control_context(snapshot, decision, messages)
+            model_decision = await self.advisor.decide(
+                context,
+                mode=self.config.mode,
+                force=force or bool(messages),
+                purpose="dome control",
+            )
+            if model_decision is None:
+                if messages:
+                    await self._send_operator_message(
+                        "LLM не ответила; новые команды не выполняю.",
+                        dedupe_key="llm-no-response",
+                        min_interval_s=60,
+                    )
+                return
+            self._log_model_decision(model_decision)
+            if self.config.mode == "yolo":
+                results = await self._execute_model_commands(
+                    model_decision.commands,
+                    force=False,
+                    source="yolo",
+                )
+                self.stats["llm_commands"] += len(model_decision.commands)
+                if model_decision.operator_message:
+                    await self._send_operator_message(
+                        model_decision.operator_message,
+                        dedupe_key=f"llm:{_digest(model_decision.operator_message)}",
+                        min_interval_s=0,
+                    )
+                if results:
+                    summary = self._format_model_results(results)
+                    if not model_decision.operator_message or any(
+                        not result.get("ok") for _, result in results
+                    ):
+                        await self._send_operator_message(
+                            summary,
+                            dedupe_key=f"llm-result:{_digest(summary)}",
+                            min_interval_s=0,
+                        )
+                return
+
+            if model_decision.commands:
+                pending = PendingProposal(
+                    commands=model_decision.commands,
+                    message=model_decision.operator_message,
+                    created_at=time.time(),
+                    source="llm",
+                    analysis=model_decision.analysis,
+                    risk=model_decision.risk,
+                )
+                if self._pending is not None:
+                    # Never replace an operator-facing proposal behind their
+                    # back. The pending item expires or is confirmed/cancelled.
+                    if self._pending.signature != pending.signature:
+                        await self._send_operator_message(
+                            "Есть ожидающее предложение. Сначала подтвердите или "
+                            "отмените его.",
+                            dedupe_key="pending-busy",
+                            min_interval_s=30,
+                        )
+                    return
+                self._pending = pending
+                self.stats["proposals"] += 1
+                text = model_decision.operator_message or "Предлагаю выполнить действия."
+                text += "\n\nПодтвердить? (да / выполняй; отмена)"
+                await self._send_operator_message(
+                    text,
+                    dedupe_key=f"proposal:{_digest(text)}",
+                    min_interval_s=0,
+                )
+            elif model_decision.operator_message:
+                await self._send_operator_message(
+                    model_decision.operator_message,
+                    dedupe_key=f"llm:{_digest(model_decision.operator_message)}",
+                    min_interval_s=0,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._log_exception("llm_control", exc)
+
+    async def _control_context(
+        self,
+        snapshot: Snapshot,
+        decision: RuleResult,
+        messages: list[ChatMessage],
+    ) -> dict[str, Any]:
+        context: dict[str, Any] = {
+            "mode": self.config.mode,
+            "snapshot": snapshot.brief(),
+            "rule_decision": decision.as_dict(),
+            "task": self.state.task,
+            "recent_chat": list(self._recent_chat),
+            "new_operator_messages": [message.text[:1000] for message in messages],
+            "pending": None,
+            "hard_denied_actions": sorted(HARD_DENY_ACTIONS),
+            "auto_protective": [
+                "smart_panel_01.line_off",
+                "printer_3d_01.stop_job",
+                "cnc_01.stop_job",
+                "solar_inverter_01.set_fan=ON",
+                "supply_ventilation_01.turn_on",
+                "fume_extraction_01.turn_on",
+                "supply_ventilation_01.set_mode=FRESH_AIR",
+                "any.turn_off",
+            ],
+            "policy": self.gate.allowed_summary(),
+        }
+        if self._pending is not None:
+            pending = self._pending.as_dict()
+            pending["age_s"] = round(time.time() - self._pending.created_at, 1)
+            context["pending"] = pending
+        try:
+            catalog = await self.api.catalog()
+        except Exception as exc:
+            context["catalog_error"] = f"{type(exc).__name__}: {exc}"
+        else:
+            context["catalog"] = compact_catalog(catalog)
+        return context
+
+    def _log_model_decision(self, model_decision: ModelDecision) -> int:
+        plan = [
+            f"{command.tool}:{command.node_id}.{command.action}".strip(".")
+            for command in model_decision.commands
+        ]
+        ref = self.log.write(
+            "decision",
+            situation=model_decision.analysis[:500] or "LLM decision",
+            cause="",
+            confidence=model_decision.confidence,
+            evidence=[],
+            plan=plan,
+            source="llm",
+            mode=self.config.mode,
+            commands=[command.as_dict() for command in model_decision.commands],
+            operator_message=model_decision.operator_message,
+            risk=model_decision.risk,
+            warnings=list(model_decision.warnings),
+        )
+        self.stats["decisions"] += 1
+        self._last_decision_at = time.monotonic()
+        return ref
+
+    async def _execute_model_commands(
+        self,
+        commands: tuple[ModelCommand, ...],
+        *,
+        force: bool,
+        source: str,
+    ) -> list[tuple[ModelCommand, dict[str, Any]]]:
+        results: list[tuple[ModelCommand, dict[str, Any]]] = []
+        for command in commands:
+            results.append(
+                (
+                    command,
+                    await self._execute_model_command(
+                        command,
+                        force=force,
+                        source=source,
+                    ),
+                )
+            )
+        return results
+
+    async def _execute_model_command(
+        self,
+        command: ModelCommand,
+        *,
+        force: bool,
+        source: str,
+    ) -> dict[str, Any]:
+        request = command.as_dict()
+        unsafe = bool(self.config.yolo or force)
+        if command.tool == "control":
+            if not self.config.control_enabled and not self.config.yolo:
+                return self._block_model(
+                    command,
+                    "control disabled: set AGENT_ALLOW_CONTROL=1",
+                    source=source,
+                    forceable=False,
+                    unsafe=unsafe,
+                )
+            if command.action.casefold() in HARD_DENY_ACTIONS:
+                return self._block_model(
+                    command,
+                    f"action {command.action!r} is hard-denied",
+                    source=source,
+                    forceable=False,
+                    unsafe=unsafe,
+                )
+            action = ActionSpec(
+                key=f"llm:{_digest(command.signature)}",
+                node_id=command.node_id,
+                action=command.action,
+                value=command.value,
+                reason=command.reason,
+            )
+            if not force and not self.config.yolo:
+                gate_decision = self.gate.check(action, dry_run=self.config.dry_run)
+                if not gate_decision.allowed:
+                    return self._block_model(
+                        command,
+                        gate_decision.reason,
+                        source=source,
+                        forceable=True,
+                        unsafe=bool(gate_decision.unsafe),
+                    )
+            result = await self.tool.execute(
+                command,
+                force=force or self.config.yolo,
+                verify=not self.config.yolo,
+                dry_run=self.config.dry_run,
+            )
+        elif command.tool == "send_message" and self.config.dry_run:
+            result = {
+                "ok": True,
+                "command": request,
+                "result": {"dry_run": True, "sent": False},
+            }
+        else:
+            result = await self.tool.execute(command, dry_run=self.config.dry_run)
+
+        response = result.get("result")
+        if not isinstance(response, Mapping):
+            response = {
+                "success": bool(result.get("ok")),
+                "error": result.get("error"),
+            }
+        if result.get("ok"):
+            self.stats["actions"] += 1
+        else:
+            self.stats["action_failures"] += 1
+        self.log.write(
+            "action",
+            request=request,
+            response=dict(response),
+            reason=command.reason,
+            dry_run=self.config.dry_run,
+            unsafe=unsafe,
+            source=source,
+            force=force,
+        )
+        return result
+
+    def _block_model(
+        self,
+        command: ModelCommand,
+        reason: str,
+        *,
+        source: str,
+        forceable: bool,
+        unsafe: bool,
+    ) -> dict[str, Any]:
+        self.stats["actions_blocked"] += 1
+        self.log.write(
+            "action_blocked",
+            request=command.as_dict(),
+            reason=reason,
+            unsafe=unsafe,
+            source=source,
+            forceable=forceable,
+        )
+        return {
+            "ok": False,
+            "blocked": True,
+            "forceable": forceable,
+            "error": reason,
+            "command": command.as_dict(),
+        }
+
+    def _format_model_results(
+        self,
+        results: list[tuple[ModelCommand, dict[str, Any]]],
+    ) -> str:
+        if not results:
+            return "Команды не требуются."
+        lines: list[str] = []
+        for command, result in results:
+            label = f"{command.tool}:{command.node_id}.{command.action}".strip(":")
+            if result.get("ok"):
+                status = "OK"
+            elif result.get("blocked"):
+                status = "BLOCKED"
+            else:
+                status = "FAIL"
+            error = str(result.get("error") or "")[:300]
+            lines.append(f"{status} {label}" + (f": {error}" if error else ""))
+        return "Результат:\n" + "\n".join(lines[:8])
 
     # ------------------------------------------------------------------
     # LLM advice (advisory only, after safety actions)
@@ -1009,7 +1574,7 @@ async def run_agent(config: AgentConfig) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dome-agent",
-        description="Autonomous Dome shift agent (DeepSeek advisory + deterministic rules).",
+        description="Autonomous Dome shift agent (LLM-controlled normal/YOLO modes).",
     )
     parser.add_argument("--env-file", default=".env", help="optional .env file (default: .env)")
     parser.add_argument("--url", default=None, help="override DOME_URL")
@@ -1017,6 +1582,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-dir", default=None, help="override AGENT_LOG_DIR")
     parser.add_argument("--state-file", default=None, help="override AGENT_STATE_FILE")
     parser.add_argument("--dry-run", action="store_true", default=None, help="analyze and log but send no commands/messages")
+    parser.add_argument("--allow-control", action="store_true", default=None, help="allow control commands (normal/auto modes)")
+    parser.add_argument(
+        "--mode",
+        choices=("normal", "auto", "yolo"),
+        default=None,
+        help="normal: LLM proposals + confirmation; auto: rules only; yolo: LLM executes immediately",
+    )
+    parser.add_argument("--yolo", action="store_true", default=None, help="UNSAFE alias for --mode yolo")
     parser.add_argument("--run-seconds", type=float, default=None, help="stop after N seconds (0 means indefinitely)")
     return parser
 
@@ -1034,6 +1607,12 @@ def main(argv: list[str] | None = None) -> int:
         overrides["state_file"] = Path(args.state_file)
     if args.dry_run is not None:
         overrides["dry_run"] = True
+    if args.allow_control is not None:
+        overrides["control_enabled"] = True
+    if args.mode:
+        overrides["mode"] = args.mode
+    if args.yolo is not None:
+        overrides["mode"] = "yolo"
     if args.run_seconds is not None:
         overrides["run_seconds"] = args.run_seconds
     try:
@@ -1041,6 +1620,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"agent configuration error: {exc}", file=sys.stderr)
         return 2
+    if config.yolo:
+        print(
+            "WARNING: YOLO mode enabled: the LLM executes commands immediately; "
+            "policy, cooldowns and verification are bypassed. Hard-denied actions "
+            "are still blocked. Use only on a test dome.",
+            file=sys.stderr,
+        )
     try:
         asyncio.run(run_agent(config))
     except KeyboardInterrupt:
