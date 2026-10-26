@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "default": "deny",
+  "description": "Allowed autonomous agent actions. Unknown nodes/actions are denied unless AGENT_YOLO=1.",
+  "deny_nodes": [
+    "access_control_01",
+    "dome_sealing_01",
+    "fire_suppression_01"
+  ],
+  "deny_actions": [
+    "block_automation",
+    "block_interlock",
+    "cancel_job",
+    "force",
+    "reboot",
+    "remove_part",
+    "set_thresholds",
+    "shutdown",
+    "unlock_door"
+  ],
+  "allow": {
+    "dome_automation_01": {
+      "actions": [
+        "set_data_trust",
+        "set_primary_sensor",
+        "reset_interlock"
+      ],
+      "values": {
+        "reset_interlock": [
+          "IL_CO2"
+        ],
+        "set_primary_sensor": [
+          "climate_sensor_01",
+          "climate_sensor_02",
+          "climate_sensor_03"
+        ]
+      }
+    },
+    "smart_panel_01": {
+      "actions": [
+        "line_on",
+        "line_off",
+        "reset_protection"
+      ],
+      "values": {
+        "line_on": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "line_off": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "reset_protection": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    },
+    "supply_ventilation_01": {
+      "actions": [
+        "turn_on",
+        "set_mode"
+      ],
+      "values": {
+        "set_mode": [
+          "FRESH_AIR"
+        ]
+      }
+    },
+    "solar_inverter_01": {
+      "actions": [
+        "set_fan",
+        "reset_error"
+      ],
+      "values": {
+        "set_fan": [
+          "ON",
+          "OFF"
+        ]
+      }
+    },
+    "dizel_1": [
+      "turn_on"
+    ],
+    "fume_extraction_01": [
+      "turn_on"
+    ],
+    "printer_3d_01": [
+      "start_job",
+      "resume",
+      "home",
+      "reconnect",
+      "stop_job"
+    ],
+    "cnc_01": [
+      "start_job",
+      "resume",
+      "home",
+      "reconnect",
+      "stop_job"
+    ]
+  }
+}
