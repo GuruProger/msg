@@ -1,0 +1,5862 @@
+[
+ {
+  "node_id": "access_control_01",
+  "code_name": "access_control",
+  "title": "Система контроля доступа / двери",
+  "system": "safety",
+  "system_ru": "Безопасность",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "doors",
+    "unit": null,
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "MAIN_AIRLOCK",
+     "FABLAB",
+     "STORAGE",
+     "SERVER_ROOM"
+    ]
+   },
+   {
+    "key": "passage_events",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "t_h",
+     "door",
+     "credential",
+     "direction",
+     "result"
+    ]
+   },
+   {
+    "key": "system_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_reason",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "lockdown",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "lock_door",
+    "label": "заблокировать дверь",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "doors.DOOR.locked"
+    ]
+   },
+   {
+    "action": "unlock_door",
+    "label": "разблокировать дверь",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "doors.DOOR.locked"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "alarm_reason"
+    ]
+   },
+   {
+    "action": "lockdown",
+    "label": "режим блокировки",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "lockdown"
+    ]
+   }
+  ],
+  "aliases": [
+   "двери",
+   "дверь",
+   "доступ",
+   "замок"
+  ],
+  "telemetry_doc": [
+   "состояние дверей (`OPEN`, `CLOSED`, `FORCED`, `TAMPER`)",
+   "события прохода",
+   "уровень заряда замков",
+   "состояние системы",
+   "наличие тревоги"
+  ],
+  "controls_doc": [
+   "разблокировать дверь",
+   "заблокировать дверь",
+   "сбросить тревогу",
+   "принудительная блокировка",
+   "",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "air_quality_sensor_01",
+  "code_name": "air_quality_sensor",
+  "title": "Датчик качества воздуха CO/VOC",
+  "system": "climate",
+  "system_ru": "Климат",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FABLAB",
+    "enum_hint": "FABLAB"
+   },
+   {
+    "key": "co_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.5
+   },
+   {
+    "key": "voc_index",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 97
+   },
+   {
+    "key": "chem_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "warming_up",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.972
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "recalibrate",
+    "label": "перекалибровать датчик",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "sensor_state",
+     "confidence"
+    ]
+   }
+  ],
+  "aliases": [
+   "co",
+   "voc",
+   "качество воздуха"
+  ],
+  "telemetry_doc": [
+   "концентрация CO",
+   "уровень VOC",
+   "состояние датчика",
+   "достоверность показаний"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "backup_comms_01",
+  "code_name": "backup_comms",
+  "title": "Резервный канал связи (спутник / LoRa / mesh)",
+  "system": "external",
+  "system_ru": "Внешние системы",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "active_channel",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "SATELLITE",
+    "enum_hint": "SATELLITE"
+   },
+   {
+    "key": "protocol",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "IRIDIUM_SBD",
+    "enum_hint": "IRIDIUM_SBD"
+   },
+   {
+    "key": "traffic_priority",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "available",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "latency_ms",
+    "unit": "m/s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1017.0
+   },
+   {
+    "key": "signal_quality_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 73.3
+   },
+   {
+    "key": "bitrate_kbps",
+    "unit": "kbps",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 34.36
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "AVAILABLE",
+    "enum_hint": "AVAILABLE"
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "switch_channel",
+    "label": "переключить канал",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "active_channel",
+     "available"
+    ]
+   },
+   {
+    "action": "set_traffic_priority",
+    "label": "приоритет трафика",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "traffic_priority"
+    ]
+   },
+   {
+    "action": "set_protocol",
+    "label": "изменить протокол",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "protocol",
+     "available"
+    ]
+   }
+  ],
+  "aliases": [
+   "канал связи",
+   "резервный канал"
+  ],
+  "telemetry_doc": [
+   "доступность канала",
+   "задержка, мс",
+   "качество сигнала",
+   "скорость передачи",
+   "используемый протокол",
+   "состояние (`AVAILABLE`, `DEGRADED`, `UNAVAILABLE`)"
+  ],
+  "controls_doc": [
+   "переключить канал",
+   "установить приоритет трафика",
+   "изменить протокол",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "battery_01",
+  "code_name": "battery",
+  "title": "Аккумуляторная батарея (АКБ)",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "soc_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 39.97
+   },
+   {
+    "key": "voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 25.95
+   },
+   {
+    "key": "current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.58
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 41.1
+   },
+   {
+    "key": "nominal_capacity_ah",
+    "unit": "Ah",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 100.0
+   },
+   {
+    "key": "nominal_capacity_kwh",
+    "unit": "kWh",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2.56
+   },
+   {
+    "key": "estimated_capacity_kwh",
+    "unit": "kWh",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 2.559
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "CHARGING",
+    "enum_hint": "CHARGING"
+   },
+   {
+    "key": "balancing_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "IDLE",
+    "enum_hint": "IDLE"
+   },
+   {
+    "key": "cell_voltage_delta_mv",
+    "unit": "mV",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 65.4
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 14.39
+   },
+   {
+    "key": "charge_allowed",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [],
+  "aliases": [
+   "bms",
+   "soc",
+   "акб",
+   "аккумулятор",
+   "батареи",
+   "батарея",
+   "накопитель"
+  ],
+  "telemetry_doc": [
+   "SOC, %",
+   "напряжение, В",
+   "ток, А",
+   "мощность заряда/разряда, Вт",
+   "номинальная ёмкость",
+   "расчётная/фактическая ёмкость",
+   "состояние (`CHARGING`, `DISCHARGING`, `IDLE`)",
+   "состояние балансировки"
+  ],
+  "controls_doc": [
+   "отдельные команды не требуются"
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "chem_sensor_01",
+  "code_name": "chem_sensor",
+  "title": "Химический датчик",
+  "system": "external",
+  "system_ru": "Внешние системы",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "concentration_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.093
+   },
+   {
+    "key": "substance",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NONE",
+    "enum_hint": "NONE"
+   },
+   {
+    "key": "alarm_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "warning_threshold",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 5.0
+   },
+   {
+    "key": "alarm_threshold",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 20.0
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.976
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm_state"
+    ]
+   },
+   {
+    "action": "set_thresholds",
+    "label": "задать пороги",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "warning_threshold",
+     "alarm_threshold"
+    ]
+   }
+  ],
+  "aliases": [
+   "химический датчик",
+   "химия"
+  ],
+  "telemetry_doc": [
+   "концентрация опасных веществ",
+   "тип обнаруженного вещества",
+   "состояние датчика",
+   "достоверность показаний",
+   "состояние тревоги (`NORMAL`, `WARNING`, `ALARM`)"
+  ],
+  "controls_doc": [
+   "сбросить тревогу",
+   "установить пороговые значения",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "climate_sensor_01",
+  "code_name": "climate_sensor",
+  "title": "Датчик климата",
+  "system": "climate",
+  "system_ru": "Климат",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FABLAB",
+    "enum_hint": "FABLAB"
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 20.64
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 48.6
+   },
+   {
+    "key": "co2_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 725
+   },
+   {
+    "key": "dew_point_c",
+    "unit": "°C",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 9.41
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.976
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "recalibrate",
+    "label": "перекалибровать датчик",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "sensor_state",
+     "confidence"
+    ]
+   }
+  ],
+  "aliases": [
+   "co2",
+   "co₂",
+   "влажность",
+   "датчик климата",
+   "климат",
+   "конденсат",
+   "температура воздуха",
+   "точка росы",
+   "углекислый газ"
+  ],
+  "telemetry_doc": [
+   "температура окружающей среды, °C",
+   "относительная влажность, %",
+   "CO₂, ppm",
+   "точка росы, °C — расчётный параметр",
+   "состояние датчика",
+   "достоверность показаний"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "climate_sensor_02",
+  "code_name": "climate_sensor_extra",
+  "title": "Дополнительные датчики климата (избыточные)",
+  "system": "climate",
+  "system_ru": "Климат",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FABLAB",
+    "enum_hint": "FABLAB"
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 21.73
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 50.0
+   },
+   {
+    "key": "co2_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 753
+   },
+   {
+    "key": "dew_point_c",
+    "unit": "°C",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 10.85
+   },
+   {
+    "key": "reading_delay_s",
+    "unit": "s",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 900.0
+   },
+   {
+    "key": "drift_temp_c",
+    "unit": "°C",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 1.157
+   },
+   {
+    "key": "drift_humidity_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 1.13
+   },
+   {
+    "key": "drift_co2_ppm",
+    "unit": "ppm",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 18.7
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.736
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "recalibrate",
+    "label": "перекалибровать датчик",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "sensor_state",
+     "confidence"
+    ]
+   }
+  ],
+  "aliases": [],
+  "telemetry_doc": [
+   "температура окружающей среды, °C",
+   "относительная влажность, %",
+   "CO₂, ppm",
+   "точка росы, °C",
+   "состояние датчика",
+   "достоверность показаний",
+   "задержка / дрейф показаний"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "climate_sensor_03",
+  "code_name": "climate_sensor_extra",
+  "title": "Дополнительные датчики климата (избыточные)",
+  "system": "climate",
+  "system_ru": "Климат",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FABLAB",
+    "enum_hint": "FABLAB"
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 22.01
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 50.4
+   },
+   {
+    "key": "co2_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 765
+   },
+   {
+    "key": "dew_point_c",
+    "unit": "°C",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 11.22
+   },
+   {
+    "key": "reading_delay_s",
+    "unit": "s",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 1800.0
+   },
+   {
+    "key": "drift_temp_c",
+    "unit": "°C",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 1.176
+   },
+   {
+    "key": "drift_humidity_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 2.25
+   },
+   {
+    "key": "drift_co2_ppm",
+    "unit": "ppm",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 37.5
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.742
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "recalibrate",
+    "label": "перекалибровать датчик",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "sensor_state",
+     "confidence"
+    ]
+   }
+  ],
+  "aliases": [],
+  "telemetry_doc": [
+   "температура окружающей среды, °C",
+   "относительная влажность, %",
+   "CO₂, ppm",
+   "точка росы, °C",
+   "состояние датчика",
+   "достоверность показаний",
+   "задержка / дрейф показаний"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "cnc_01",
+  "code_name": "cnc",
+  "title": "ЧПУ-фрезер 3018 Pro",
+  "system": "production",
+  "system_ru": "Производство",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "IDLE",
+    "enum_hint": "IDLE"
+   },
+   {
+    "key": "paused",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "x_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 68.84
+   },
+   {
+    "key": "y_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 60.721
+   },
+   {
+    "key": "z_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 5.0
+   },
+   {
+    "key": "mpos_mm",
+    "unit": "mm",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "wco_mm",
+    "unit": "mm",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "last_probe",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "spindle_rpm",
+    "unit": "rpm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "spindle_target_rpm",
+    "unit": "rpm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "file_name",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "pcb_relay_driver.nc",
+    "enum_hint": "pcb_relay_driver.nc"
+   },
+   {
+    "key": "files",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "progress_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 100.0
+   },
+   {
+    "key": "job_elapsed_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 5400.0
+   },
+   {
+    "key": "job_duration_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 5400.0
+   },
+   {
+    "key": "job_time_left_s",
+    "unit": "s",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "homed",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "error_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "error_text",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "last_gcode",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 25.0
+   },
+   {
+    "key": "spindle_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 21.8
+   },
+   {
+    "key": "quality_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "part_defect",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "hold_level",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "hold_reason",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "resume_attempts",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "lockout_remaining_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "start_job",
+    "label": "запустить фрезеровку",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "preconditions": [
+     "homed == true",
+     "hold_level == null"
+    ],
+    "verify_by": [
+     "state",
+     "progress_pct",
+     "spindle_rpm"
+    ]
+   },
+   {
+    "action": "resume",
+    "label": "снять с паузы",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "notes": "3 пустые попытки → ALARM на 20 минут",
+    "verify_by": [
+     "state",
+     "progress_pct",
+     "hold_level"
+    ]
+   },
+   {
+    "action": "home",
+    "label": "найти нулевое положение",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "homed"
+    ]
+   },
+   {
+    "action": "move",
+    "label": "перемещение по осям",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "x": [
+      -300,
+      300
+     ],
+     "y": [
+      -180,
+      180
+     ],
+     "z": [
+      -80,
+      80
+     ],
+     "feedrate": [
+      10,
+      5000
+     ]
+    },
+    "verify_by": [
+     "x_mm",
+     "y_mm",
+     "z_mm"
+    ]
+   },
+   {
+    "action": "set_zero",
+    "label": "обнулить координаты",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "enum": [
+      "xyz",
+      "xy",
+      "z"
+     ]
+    },
+    "verify_by": [
+     "wco_mm"
+    ]
+   },
+   {
+    "action": "probe_z",
+    "label": "измерить поверхность заготовки",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "distance": [
+      0.1,
+      30
+     ],
+     "feed": [
+      1,
+      300
+     ],
+     "plate_thickness": [
+      0,
+      30
+     ],
+     "retract": [
+      0,
+      20
+     ]
+    },
+    "verify_by": [
+     "last_probe"
+    ]
+   }
+  ],
+  "aliases": [
+   "станок",
+   "фрезер",
+   "фрезеровка",
+   "чпу"
+  ],
+  "telemetry_doc": [
+   "online/offline",
+   "состояние (`IDLE`, `RUNNING`, `PAUSED`, `ALARM`)",
+   "наличие паузы",
+   "координаты X/Y/Z",
+   "обороты шпинделя, RPM",
+   "имя файла",
+   "процент выполнения, %",
+   "код/тип ошибки",
+   "состояние аварии",
+   "`files` — G-code файлы фрезеровки (запрос `list_files`)",
+   "удержание сервером: `hold_level`, `hold_reason`, `resume_attempts`, `lockout_remaining_s`"
+  ],
+  "controls_doc": [
+   "✅ запустить файл (`start_job`)",
+   "✅ Resume — проходит, только если причина удержания устранена; три пустые попытки — ALARM на 20 мин (фрезер остаётся на паузе)",
+   "✅ Home",
+   "`FeedHold`, Abort, Reset Alarm (`$X`), отправить G-code — только сервер/админ",
+   "`server_hold` — удержание сервером: FeedHold с остановкой шпинделя (реальный GRBL: `!` + Spindle Stop override 0x9E; если не сработало — безопасная отмена задания); `release_hold` — снять удержание (админ)",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "dizel_1",
+  "code_name": "dizel",
+  "title": "Дизельный генератор",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OFF",
+    "enum_hint": "OFF"
+   },
+   {
+    "key": "fault_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "fault_reason",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "start_attempts",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "preheat_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OFF",
+    "enum_hint": "OFF"
+   },
+   {
+    "key": "engine_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 14.3
+   },
+   {
+    "key": "fuel_consumption_l_h",
+    "unit": "L/h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "runtime_h",
+    "unit": "h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "power_w"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "power_w"
+    ]
+   },
+   {
+    "action": "preheat",
+    "label": "прогрев",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "preheat_state",
+     "start_attempts"
+    ]
+   }
+  ],
+  "aliases": [
+   "дизель",
+   "дизель-генератор",
+   "дизельный генератор"
+  ],
+  "telemetry_doc": [
+   "вырабатываемая мощность, Вт",
+   "состояние (`ON`, `OFF`, `FAULT`)"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить"
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "dome_automation_01",
+  "code_name": "dome_automation",
+  "title": "Автоматика купола (интерлоки)",
+  "system": "automation",
+  "system_ru": "Автоматика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "mode",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "AUTO",
+    "enum_hint": "AUTO"
+   },
+   {
+    "key": "interlocks",
+    "unit": null,
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "IL_CO2",
+     "IL_CONDENSATE",
+     "IL_SMOKE",
+     "IL_LOAD_SHED",
+     "IL_STORM",
+     "IL_OVERVOLT",
+     "IL_INV_OVERLOAD",
+     "IL_HEAT",
+     "IL_OVERCURRENT"
+    ]
+   },
+   {
+    "key": "data_trust",
+    "unit": null,
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": []
+   },
+   {
+    "key": "events",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "event_id",
+     "t",
+     "t_s",
+     "interlock",
+     "type",
+     "message",
+     "acknowledged",
+     "line"
+    ]
+   },
+   {
+    "key": "primary_co2_sensor",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "climate_sensor_01",
+    "enum_hint": "climate_sensor_01"
+   },
+   {
+    "key": "ventilation_auto",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "diesel_autostart",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "line_current_limits_a",
+    "unit": "A",
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "1"
+    ]
+   },
+   {
+    "key": "autonomy_forecast_h",
+    "unit": "h",
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "set_data_trust",
+    "label": "пометить источник данных недостоверным",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "node": "str",
+     "trust": [
+      "OK",
+      "UNRELIABLE",
+      "FAILED"
+     ]
+    },
+    "verify_by": [
+     "data_trust"
+    ]
+   },
+   {
+    "action": "set_primary_sensor",
+    "label": "сменить основной датчик CO₂",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "primary_co2_sensor"
+    ]
+   },
+   {
+    "action": "reset_interlock",
+    "label": "сбросить интерлок",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "notes": "только после устранения причины",
+    "verify_by": [
+     "interlocks"
+    ]
+   },
+   {
+    "action": "block_interlock",
+    "label": "блокировать интерлок",
+    "allowed_for": "operator",
+    "api_confirmed": true,
+    "verify_by": [
+     "interlocks"
+    ]
+   },
+   {
+    "action": "unblock_interlock",
+    "label": "разблокировать интерлок",
+    "allowed_for": "operator",
+    "api_confirmed": true,
+    "verify_by": [
+     "interlocks"
+    ]
+   },
+   {
+    "action": "acknowledge",
+    "label": "квитировать событие автоматики",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "events"
+    ]
+   },
+   {
+    "action": "set_ventilation_auto",
+    "label": "автоматика вентиляции",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "ventilation_auto"
+    ]
+   },
+   {
+    "action": "set_diesel_autostart",
+    "label": "автозапуск дизель-генератора",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "diesel_autostart"
+    ]
+   }
+  ],
+  "aliases": [
+   "il_co2",
+   "il_condensate",
+   "il_heat",
+   "il_inv_overload",
+   "il_load_shed",
+   "il_overcurrent",
+   "il_overvolt",
+   "il_smoke",
+   "il_storm",
+   "автоматика",
+   "интерлок",
+   "интерлоки"
+  ],
+  "telemetry_doc": [],
+  "controls_doc": [],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "dome_sealing_01",
+  "code_name": "dome_sealing",
+  "title": "Система герметизации / клапаны",
+  "system": "climate",
+  "system_ru": "Климат",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "valve_positions_pct",
+    "unit": "%",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "valve_targets_pct",
+    "unit": "%",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "pressure_diff_pa",
+    "unit": "Pa",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.1
+   },
+   {
+    "key": "leak_rate_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 7.99791
+   },
+   {
+    "key": "leak_detected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OPEN",
+    "enum_hint": "OPEN"
+   },
+   {
+    "key": "sealed_zone",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "seal_ready",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "fault_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "open_valves",
+    "label": "открыть клапаны",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "valve_positions_pct",
+     "pressure_diff_pa"
+    ]
+   },
+   {
+    "action": "close_valves",
+    "label": "закрыть клапаны",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "valve_positions_pct"
+    ]
+   },
+   {
+    "action": "seal_zone",
+    "label": "герметизировать зону",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "seal_ready",
+     "leak_detected"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить ошибку",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "fault_code",
+     "state"
+    ]
+   }
+  ],
+  "aliases": [
+   "герметизация",
+   "клапан",
+   "утечка"
+  ],
+  "telemetry_doc": [
+   "положение клапанов",
+   "перепад давления",
+   "наличие утечек",
+   "состояние (`OPEN`, `CLOSED`, `PARTIAL`, `FAULT`)",
+   "готовность к герметизации"
+  ],
+  "controls_doc": [
+   "открыть клапаны",
+   "закрыть клапаны",
+   "герметизировать зону",
+   "сбросить ошибку",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "edge_compute_01",
+  "code_name": "edge_compute",
+  "title": "Локальный вычислительный узел / edge-сервер",
+  "system": "compute",
+  "system_ru": "Вычисления",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "cpu_load_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 30.1
+   },
+   {
+    "key": "gpu_load_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 57.2
+   },
+   {
+    "key": "free_memory_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 72.0
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 52.6
+   },
+   {
+    "key": "services",
+    "unit": null,
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "agent_runtime",
+     "telemetry_collector",
+     "vision_inference",
+     "api_gateway"
+    ]
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ONLINE",
+    "enum_hint": "ONLINE"
+   },
+   {
+    "key": "load_limit_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 100.0
+   },
+   {
+    "key": "uptime_h",
+    "unit": "h",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "clock_offset_s",
+    "unit": "s",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "restart_service",
+    "label": "перезапустить сервис",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "services",
+     "state"
+    ]
+   },
+   {
+    "action": "limit_load",
+    "label": "ограничить нагрузку",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "load_limit_pct",
+     "cpu_load_pct"
+    ]
+   },
+   {
+    "action": "sync_time",
+    "label": "синхронизировать время",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "clock_offset_s"
+    ]
+   },
+   {
+    "action": "reboot",
+    "label": "перезагрузить узел",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "uptime_h"
+    ]
+   }
+  ],
+  "aliases": [
+   "raspberry",
+   "вычисления",
+   "сервер"
+  ],
+  "telemetry_doc": [
+   "загрузка CPU, %",
+   "загрузка GPU, %",
+   "свободная память, %",
+   "температура, °C",
+   "состояние сервисов агента",
+   "состояние (`ONLINE`, `DEGRADED`, `OFFLINE`, `OVERHEAT`)"
+  ],
+  "controls_doc": [
+   "перезапустить сервис",
+   "ограничить нагрузку",
+   "перезагрузить узел",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "equipment_cooling_01",
+  "code_name": "equipment_cooling",
+  "title": "Охлаждение / чиллер для ЧПУ и 3D-принтера",
+  "system": "production",
+  "system_ru": "Производство",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "coolant_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 21.8
+   },
+   {
+    "key": "coolant_flow_l_min",
+    "unit": "L/min",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 4.14
+   },
+   {
+    "key": "pump_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 20.5
+   },
+   {
+    "key": "heat_exchanger_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 21.1
+   },
+   {
+    "key": "speed_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 70.0
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ON",
+    "enum_hint": "ON"
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "bleeding",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "coolant_flow_l_min"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "coolant_flow_l_min"
+    ]
+   },
+   {
+    "action": "set_speed",
+    "label": "изменить скорость",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "speed_pct"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить аварию",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "alarm_code"
+    ]
+   }
+  ],
+  "aliases": [],
+  "telemetry_doc": [
+   "температура охлаждающей жидкости, °C",
+   "расход охлаждающей жидкости",
+   "мощность насоса, Вт",
+   "состояние (`ON`, `OFF`, `FAULT`)",
+   "наличие аварии",
+   "температура теплообменника"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить",
+   "изменить скорость",
+   "сбросить аварию",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "fire_suppression_01",
+  "code_name": "fire_suppression",
+  "title": "Система пожаротушения / спринклеры",
+  "system": "fire",
+  "system_ru": "Пожарная безопасность",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "pressure_bar",
+    "unit": "bar",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 6.02
+   },
+   {
+    "key": "valves",
+    "unit": null,
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "FABLAB",
+     "LIVING",
+     "STORAGE",
+     "POWER_ROOM"
+    ]
+   },
+   {
+    "key": "ready",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "false_trigger_count",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "READY",
+    "enum_hint": "READY"
+   },
+   {
+    "key": "active_zone",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "automation_blocked",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "fault_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "discharge_l_min",
+    "unit": "L/min",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "manual_start_zone",
+    "label": "ручной пуск зоны",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "active_zone"
+    ]
+   },
+   {
+    "action": "stop",
+    "label": "остановить",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "state"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "fault_code"
+    ]
+   },
+   {
+    "action": "block_automation",
+    "label": "блокировать автоматику",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "automation_blocked"
+    ]
+   },
+   {
+    "action": "unblock_automation",
+    "label": "разблокировать автоматику",
+    "allowed_for": "operator",
+    "api_confirmed": false,
+    "verify_by": [
+     "automation_blocked"
+    ]
+   }
+  ],
+  "aliases": [
+   "пожар",
+   "пожаротушение",
+   "спринклер"
+  ],
+  "telemetry_doc": [
+   "давление в системе, бар",
+   "состояние клапанов",
+   "готовность системы",
+   "наличие ложных срабатываний",
+   "состояние (`READY`, `ACTIVE`, `FAULT`, `DISABLED`)",
+   "зона срабатывания"
+  ],
+  "controls_doc": [
+   "ручной пуск зоны",
+   "остановка",
+   "сброс тревоги",
+   "блокировка автоматики",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "fuel_tank_01",
+  "code_name": "fuel_tank",
+  "title": "Топливный бак дизель-генератора",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "capacity_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 200.0
+   },
+   {
+    "key": "volume_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 150.0
+   },
+   {
+    "key": "level_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 75.0
+   },
+   {
+    "key": "consumption_l_h",
+    "unit": "L/h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "water_content_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 298.986
+   },
+   {
+    "key": "contamination_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.3
+   },
+   {
+    "key": "fuel_quality",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "GOOD",
+    "enum_hint": "GOOD"
+   },
+   {
+    "key": "fuel_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 11.1
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "reserve_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 150.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "transfer_fuel",
+    "label": "перекачка топлива между баками",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "volume_l",
+     "level_pct"
+    ]
+   }
+  ],
+  "aliases": [
+   "топливный бак",
+   "топливо"
+  ],
+  "telemetry_doc": [
+   "уровень топлива, %",
+   "объём топлива, л",
+   "расход топлива, л/ч",
+   "качество топлива (вода / загрязнение)",
+   "температура топлива, °C",
+   "состояние (`NORMAL`, `LOW`, `CRITICAL`, `CONTAMINATED`)"
+  ],
+  "controls_doc": [
+   "нет (или перекачка между баками — при наличии)",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "fume_extraction_01",
+  "code_name": "fume_extraction",
+  "title": "Вытяжная вентиляция FabLab",
+  "system": "ventilation",
+  "system_ru": "Вентиляция",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "enabled",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 98.9
+   },
+   {
+    "key": "fan_rpm",
+    "unit": "rpm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2728
+   },
+   {
+    "key": "airflow_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 98.9
+   },
+   {
+    "key": "motor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "motor_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 55.5
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить вытяжку",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "enabled",
+     "power_w",
+     "fan_rpm"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить вытяжку",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "enabled",
+     "power_w"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить аварию",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "alarm_code"
+    ]
+   }
+  ],
+  "aliases": [
+   "вытяжка"
+  ],
+  "telemetry_doc": [
+   "включена/выключена",
+   "потребляемая мощность, Вт",
+   "состояние двигателя",
+   "состояние аварии",
+   "обороты вентилятора — при наличии датчика"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить",
+   "сбросить аварию",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "material_inventory_01",
+  "code_name": "material_inventory",
+  "title": "Склад материалов",
+  "system": "production",
+  "system_ru": "Производство",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "filament_g",
+    "unit": "g",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 768.0
+   },
+   {
+    "key": "filament_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 76.8
+   },
+   {
+    "key": "spool_capacity_g",
+    "unit": "g",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1000.0
+   },
+   {
+    "key": "spare_spools",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 3
+   },
+   {
+    "key": "cnc_blanks_count",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 30
+   },
+   {
+    "key": "consumables_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 85.0
+   },
+   {
+    "key": "low_stock_warnings",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.991
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [],
+  "aliases": [],
+  "telemetry_doc": [
+   "остаток филамента, г / %",
+   "остаток заготовок для ЧПУ",
+   "остаток расходных материалов",
+   "состояние датчиков веса/уровня",
+   "достоверность данных",
+   "предупреждения о низком запасе"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "network_link_01",
+  "code_name": "network_link",
+  "title": "Сетевой канал связи",
+  "system": "compute",
+  "system_ru": "Связь и вычисления",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "active_path",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "MAIN",
+    "enum_hint": "MAIN"
+   },
+   {
+    "key": "link_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "UP",
+    "enum_hint": "UP"
+   },
+   {
+    "key": "link_flaps",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "rx_power_dbm",
+    "unit": "dBm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": -8.81
+   },
+   {
+    "key": "reserve_link_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "UP",
+    "enum_hint": "UP"
+   },
+   {
+    "key": "packet_loss_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "panel_link_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "UP",
+    "enum_hint": "UP"
+   },
+   {
+    "key": "patchcord_replacing",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "reconnect",
+    "label": "переподключиться к узлу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "kind": "service_action",
+    "verify_by": [
+     "link_state",
+     "online"
+    ]
+   }
+  ],
+  "aliases": [
+   "связь",
+   "сеть"
+  ],
+  "telemetry_doc": [],
+  "controls_doc": [],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "printer_3d_01",
+  "code_name": "printer_3d",
+  "title": "3D-принтер Anycubic Kobra 2 Pro",
+  "system": "production",
+  "system_ru": "Производство",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "COMPLETED",
+    "enum_hint": "COMPLETED"
+   },
+   {
+    "key": "paused",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "nozzle_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 22.8
+   },
+   {
+    "key": "nozzle_target_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "bed_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 21.4
+   },
+   {
+    "key": "bed_target_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "file_name",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "bracket_v2.gcode",
+    "enum_hint": "bracket_v2.gcode"
+   },
+   {
+    "key": "progress_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 100.0
+   },
+   {
+    "key": "print_elapsed_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 7200.0
+   },
+   {
+    "key": "print_duration_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 7200.0
+   },
+   {
+    "key": "print_time_left_s",
+    "unit": "s",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "homed",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "x_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 84.26
+   },
+   {
+    "key": "y_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 139.79
+   },
+   {
+    "key": "z_mm",
+    "unit": "mm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 30.18
+   },
+   {
+    "key": "speed_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 100.0
+   },
+   {
+    "key": "files",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "last_gcode",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "gcode_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "gcode_error",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "error_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "webhook_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "COMPLETED",
+    "enum_hint": "COMPLETED"
+   },
+   {
+    "key": "real_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "COMPLETED",
+    "enum_hint": "COMPLETED"
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 8.0
+   },
+   {
+    "key": "heater_power_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "bed_heater_power_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "rotation_distance_x",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 40.0
+   },
+   {
+    "key": "filament_required_g",
+    "unit": "g",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 24.0
+   },
+   {
+    "key": "filament_used_g",
+    "unit": "g",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 24.0
+   },
+   {
+    "key": "part_defect",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "hold_level",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "hold_reason",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "resume_attempts",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "lockout_remaining_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "bed_clear",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "upload_file",
+    "label": "загрузить файл печати",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "notes": "только подготовленные организаторами файлы, до 16 МБ",
+    "verify_by": [
+     "files"
+    ]
+   },
+   {
+    "action": "delete_file",
+    "label": "удалить файл печати",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "files"
+    ]
+   },
+   {
+    "action": "start_job",
+    "label": "запустить печать",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "preconditions": [
+     "bed_clear == true",
+     "hold_level == null"
+    ],
+    "verify_by": [
+     "state",
+     "progress_pct",
+     "nozzle_temp_c"
+    ]
+   },
+   {
+    "action": "resume",
+    "label": "снять с паузы",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "notes": "3 пустые попытки → ALARM на 20 минут и отмена задания",
+    "verify_by": [
+     "state",
+     "progress_pct",
+     "hold_level"
+    ]
+   },
+   {
+    "action": "home",
+    "label": "найти нулевое положение",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "homed"
+    ]
+   },
+   {
+    "action": "set_speed",
+    "label": "изменить скорость печати",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "int": [
+      50,
+      200
+     ]
+    },
+    "verify_by": [
+     "speed_pct"
+    ]
+   },
+   {
+    "action": "move",
+    "label": "перемещение по осям",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "notes": "не во время печати",
+    "verify_by": [
+     "x_mm",
+     "y_mm",
+     "z_mm"
+    ]
+   }
+  ],
+  "aliases": [
+   "3d принтер",
+   "3d-принтер",
+   "kobra",
+   "печать",
+   "принтер"
+  ],
+  "telemetry_doc": [
+   "online/offline",
+   "состояние (`IDLE`, `PRINTING`, `PAUSED`, `ERROR`, `COMPLETED`)",
+   "наличие паузы",
+   "температура сопла, °C",
+   "температура стола, °C",
+   "имя файла модели",
+   "процент выполнения, %",
+   "состояние/ошибка G-code",
+   "`webhook_state` — состояние, полученное от webhook-сервиса",
+   "`real_state` — фактическое состояние принтера",
+   "`files` — файлы печати в памяти принтера (запрос `list_files` — с размером и оценкой времени)",
+   "позиция `x_mm`, `y_mm`, `z_mm`; скорость печати `speed_pct`, %",
+   "удержание сервером: `hold_level` (`WARNING` / `ALARM`), `hold_reason` (код причины), `resume_attempts`, `lockout_remaining_s`",
+   "`bed_clear` — стол свободен (после печати `false`, пока Оператор не заберёт деталь из бокса ФабЛаб) Принтер стоит в боксе МС-ТЮК «ФабЛаб» (`thermal_insulation_01`)."
+  ],
+  "controls_doc": [
+   "✅ загрузить файл печати (`upload_file`) — только подготовленные организаторами файлы",
+   "✅ удалить файл печати (`delete_file`)",
+   "✅ запустить файл печати (`start_job`) — на занятый стол: ALARM `BED_COLLISION`",
+   "✅ снять с паузы (`resume`) — проходит, только если причина удержания устранена три пустые попытки — ALARM на 20 мин и отмена задания",
+   "✅ найти нулевое положение (`HOME`)",
+   "✅ изменить скорость печати (`set_speed`, 50–200 %)",
+   "✅ перемещение в относительных и абсолютных координатах (`move`, не во время печати)",
+   "поставить на паузу, прервать печать, отправить G-code — только сервер/админ",
+   "`server_hold` (удержание сервером), `release_hold` (снять удержание) — сервер/админ",
+   "`remove_part` — Оператор снял деталь (физическое действие)",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "radiation_sensor_01",
+  "code_name": "radiation_sensor",
+  "title": "Датчик радиации",
+  "system": "external",
+  "system_ru": "Внешние системы",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "dose_rate_usv_h",
+    "unit": "µSv/h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.16
+   },
+   {
+    "key": "counts_per_minute",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 24
+   },
+   {
+    "key": "event_type",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "BACKGROUND",
+    "enum_hint": "BACKGROUND"
+   },
+   {
+    "key": "alarm_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "warning_threshold",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.3
+   },
+   {
+    "key": "alarm_threshold",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.0
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.979
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm_state"
+    ]
+   },
+   {
+    "action": "set_thresholds",
+    "label": "задать пороги",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "warning_threshold",
+     "alarm_threshold"
+    ]
+   }
+  ],
+  "aliases": [
+   "радиация"
+  ],
+  "telemetry_doc": [
+   "уровень радиации",
+   "тип события",
+   "состояние датчика",
+   "достоверность показаний",
+   "состояние тревоги (`NORMAL`, `WARNING`, `ALARM`)"
+  ],
+  "controls_doc": [
+   "сбросить тревогу",
+   "установить пороговые значения",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "radio_01",
+  "code_name": "radio",
+  "title": "радиосвязь",
+  "system": "external",
+  "system_ru": "Внешние системы",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "frequency_mhz",
+    "unit": "MHz",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 433.5
+   },
+   {
+    "key": "protocol",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FSK",
+    "enum_hint": "FSK"
+   },
+   {
+    "key": "bitrate_kbps",
+    "unit": "kbps",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.69
+   },
+   {
+    "key": "noise_level_dbm",
+    "unit": "dBm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": -120.9
+   },
+   {
+    "key": "snr_db",
+    "unit": "dB",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 11.8
+   },
+   {
+    "key": "signal_quality_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 58.8
+   },
+   {
+    "key": "reception",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "RECEIVING",
+    "enum_hint": "RECEIVING"
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "set_frequency",
+    "label": "изменить основную частоту",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "frequency_mhz",
+     "reception"
+    ]
+   },
+   {
+    "action": "set_protocol",
+    "label": "изменить протокол",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "protocol",
+     "reception"
+    ]
+   }
+  ],
+  "aliases": [
+   "радиосвязь"
+  ],
+  "telemetry_doc": [
+   "Скорость передачи",
+   "Уровень шума",
+   "Основная частота",
+   "Качество сигнала",
+   "Используемый протокол",
+   "состояние (прием есть, нет)"
+  ],
+  "controls_doc": [
+   "Изменение основной частоты",
+   "Изменение протокола"
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "seysmo_01",
+  "code_name": "seysmo",
+  "title": "сейсмодатчики",
+  "system": "external",
+  "system_ru": "Внешние системы",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "quake_detected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "epicenter_distance_km",
+    "unit": "km",
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "amplitude_mm_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.035
+   },
+   {
+    "key": "estimated_magnitude",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "threshold_mm_s",
+    "unit": "s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.5
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.983
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "set_threshold",
+    "label": "задать порог сейсмодатчика",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "threshold_mm_s"
+    ]
+   }
+  ],
+  "aliases": [
+   "землетрясение",
+   "сейсмо"
+  ],
+  "telemetry_doc": [
+   "Зафиксированно ли землетрясение",
+   "расстоние до эпицентра",
+   "Амплитуда",
+   "состояние датчика"
+  ],
+  "controls_doc": [
+   "Установка порогового значения",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "smart_panel_01",
+  "code_name": "smart_panel",
+  "title": "Умный щиток на 8 линий",
+  "system": "power",
+  "system_ru": "Электроснабжение",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "lines",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "line",
+     "name",
+     "rated_current_a",
+     "state",
+     "voltage_v",
+     "current_a",
+     "power_w",
+     "leakage_ma",
+     "protection_state",
+     "alarm",
+     "alarm_code",
+     "lockout_remaining_s",
+     "lockout_reason"
+    ]
+   },
+   {
+    "key": "bus_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 230.7
+   },
+   {
+    "key": "bus_powered",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "total_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 251.5
+   },
+   {
+    "key": "total_current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.15
+   },
+   {
+    "key": "lines_on_count",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 7
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "line_on",
+    "label": "включить линию",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "lines[N].state",
+     "lines[N].power_w",
+     "lines[N].current_a"
+    ]
+   },
+   {
+    "action": "line_off",
+    "label": "отключить линию",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "lines[N].state",
+     "lines[N].power_w"
+    ]
+   },
+   {
+    "action": "reset_protection",
+    "label": "сбросить срабатывание защиты",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "lines[N].protection_state",
+     "lines[N].state"
+    ]
+   },
+   {
+    "action": "reset_line_error",
+    "label": "сбросить ошибку линии",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "verify_by": [
+     "lines[N].alarm",
+     "lines[N].state"
+    ]
+   }
+  ],
+  "aliases": [
+   "линии",
+   "линия",
+   "умный щит",
+   "щит",
+   "щиток"
+  ],
+  "telemetry_doc": [
+   "состояние (`ON`, `OFF`, `TRIPPED`, `RCD_TRIP` и др.)",
+   "напряжение, В",
+   "ток, А",
+   "потребляемая мощность, Вт",
+   "состояние защиты",
+   "наличие аварии",
+   "заморозка реле: `lockout_remaining_s` (сколько ещё линия не реагирует на команды) и `lockout_reason` (`CHATTER` — больше 3 переключений агентом за 2 мин; `MOTOR_OVERHEAT` — тепловая защита вытяжки, №17) Реальные реле Tuya измеряют ток, мощность и напряжение каждой линии; срабатывание защиты и заморозку ведёт сервер."
+  ],
+  "controls_doc": [
+   "включить линию",
+   "отключить линию",
+   "сбросить ошибку линии",
+   "сбросить срабатывание защиты",
+   "эмулировать срабатывание защиты (сервер/админ) Команды замороженной линии отклоняются. Кризис №24 («тихий дроп») может подтвердить команду агента, не исполнив её, — результат проверяется по состоянию, току и мощности линии. 1. Производственный отдел 2. ЧПУ-фрезер 3. 3D-принтер 4. Обычное освещение 5. Аварийное освещение 6. Вытяжка FabLab 7. Резервная линия 8. Резервная линия / линия для сценариев фантомного потребления",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "smoke_detector_01",
+  "code_name": "smoke_detector",
+  "title": "Датчик дыма / пожарный датчик",
+  "system": "fire",
+  "system_ru": "Пожарная безопасность",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "FABLAB",
+    "enum_hint": "FABLAB"
+   },
+   {
+    "key": "smoke_detected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "obscuration_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "alarm_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "false_alarm_suspected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.986
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm_state",
+     "smoke_detected"
+    ]
+   }
+  ],
+  "aliases": [
+   "дым",
+   "пожарный датчик"
+  ],
+  "telemetry_doc": [
+   "наличие дыма (`TRUE/FALSE`)",
+   "состояние тревоги (`NORMAL`, `ALARM`)",
+   "состояние датчика",
+   "достоверность показаний"
+  ],
+  "controls_doc": [
+   "сбросить тревогу (`RESET_ALARM`)",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "smoke_detector_02",
+  "code_name": "smoke_detector",
+  "title": "Датчик дыма №2",
+  "system": "fire",
+  "system_ru": "Пожарная безопасность",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "zone",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "STORAGE",
+    "enum_hint": "STORAGE"
+   },
+   {
+    "key": "smoke_detected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "obscuration_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "alarm_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "false_alarm_suspected",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "DEGRADED",
+    "enum_hint": "DEGRADED"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.56
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "reset_alarm",
+    "label": "сбросить тревогу",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm_state",
+     "smoke_detected"
+    ]
+   }
+  ],
+  "aliases": [],
+  "telemetry_doc": [],
+  "controls_doc": [],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "solar_inverter_01",
+  "code_name": "solar_inverter",
+  "title": "Солнечный инвертор MUST PH1800 PRO",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "pv_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "pv_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 44.1
+   },
+   {
+    "key": "battery_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 25.95
+   },
+   {
+    "key": "battery_current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1.7
+   },
+   {
+    "key": "battery_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 44.2
+   },
+   {
+    "key": "battery_soc_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 39.97
+   },
+   {
+    "key": "battery_capacity_kwh",
+    "unit": "kWh",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2.56
+   },
+   {
+    "key": "load_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 366.0
+   },
+   {
+    "key": "output_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 230.0
+   },
+   {
+    "key": "output_limit_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 100.0
+   },
+   {
+    "key": "grid_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 366.0
+   },
+   {
+    "key": "generator_power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "ac_source",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "GRID",
+    "enum_hint": "GRID"
+   },
+   {
+    "key": "grid_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "AVAILABLE",
+    "enum_hint": "AVAILABLE"
+   },
+   {
+    "key": "grid_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 229.6
+   },
+   {
+    "key": "mode",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "GRID_ONLY",
+    "enum_hint": "GRID_ONLY"
+   },
+   {
+    "key": "mppt_enabled",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "mppt_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "TRACKING",
+    "enum_hint": "TRACKING"
+   },
+   {
+    "key": "battery_charge_blocked",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "power_deficit_w",
+    "unit": "W",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "inverter_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 38.6
+   },
+   {
+    "key": "fan_mode",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "AUTO",
+    "enum_hint": "AUTO"
+   },
+   {
+    "key": "fan_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ON",
+    "enum_hint": "ON"
+   },
+   {
+    "key": "fan_current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.251
+   },
+   {
+    "key": "error",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "error_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "error_text",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "balancing_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "IDLE",
+    "enum_hint": "IDLE"
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "START_CELL_BALANCING",
+    "label": "запустить балансировку АКБ",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "balancing_state"
+    ]
+   },
+   {
+    "action": "CANCEL_BALANCING",
+    "label": "остановить балансировку АКБ",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "balancing_state"
+    ]
+   },
+   {
+    "action": "SET_MODE",
+    "value_schema": {
+     "enum": [
+      "HYBRID",
+      "GRID_ONLY"
+     ]
+    },
+    "label": "переключить режим инвертора",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "mode",
+     "ac_source"
+    ]
+   },
+   {
+    "action": "SET_MAX_CHARGE_CURRENT",
+    "label": "задать максимальный ток заряда",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "battery_current_a",
+     "battery_charge_blocked"
+    ]
+   },
+   {
+    "action": "reset_error",
+    "label": "сбросить ошибку инвертора",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "error",
+     "error_code"
+    ]
+   },
+   {
+    "action": "set_fan",
+    "label": "управление вентилятором",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "notes": "только если поддерживается оборудованием",
+    "verify_by": [
+     "fan_state",
+     "fan_current_a"
+    ]
+   }
+  ],
+  "aliases": [
+   "must",
+   "ph1800",
+   "инвертор",
+   "солнечный инвертор"
+  ],
+  "telemetry_doc": [
+   "напряжение PV, В",
+   "мощность PV, Вт",
+   "напряжение АКБ, В",
+   "ток АКБ, А",
+   "мощность заряда/разряда АКБ, Вт",
+   "SOC аккумулятора, %",
+   "ёмкость аккумулятора, кВт·ч",
+   "режим работы (`HYBRID`, `GRID_ONLY` и др.)",
+   "состояние MPPT",
+   "температура инвертора, °C",
+   "состояние вентилятора",
+   "наличие ошибки",
+   "код ошибки",
+   "состояние балансировки АКБ",
+   "состояние внешней сети"
+  ],
+  "controls_doc": [
+   "`START_CELL_BALANCING`",
+   "`CANCEL_BALANCING`",
+   "переключение режима в `HYBRID`",
+   "переключение режима в `GRID_ONLY`",
+   "включение MPPT",
+   "отключение MPPT",
+   "сброс ошибки",
+   "управление вентилятором — если поддерживается реальным оборудованием",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "solar_panels_01",
+  "code_name": "solar_panels",
+  "title": "Солнечные панели",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "pv_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "pv_current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "channels_count",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2
+   },
+   {
+    "key": "mppt_channels_enabled",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "mppt_channel_power_w",
+    "unit": "W",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "mppt_1_enabled",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "all_mppt_enabled",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "active_mppt_count",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2
+   },
+   {
+    "key": "cell_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 9.3
+   },
+   {
+    "key": "soiling_loss_pct",
+    "unit": "%",
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 0.0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "ENABLE_MPPT_CHANNEL_N",
+    "label": "включить MPPT-канал N",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "mppt_channels_enabled",
+     "active_mppt_count",
+     "power_w"
+    ]
+   },
+   {
+    "action": "DISABLE_MPPT_CHANNEL_N",
+    "label": "отключить MPPT-канал N",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "mppt_channels_enabled",
+     "power_w"
+    ]
+   },
+   {
+    "action": "ENABLE_MPPT_ALL",
+    "label": "включить все MPPT-каналы",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "all_mppt_enabled",
+     "power_w"
+    ]
+   },
+   {
+    "action": "DISABLE_MPPT_ALL",
+    "label": "отключить все MPPT-каналы",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "all_mppt_enabled",
+     "power_w"
+    ]
+   }
+  ],
+  "aliases": [
+   "mppt",
+   "генерация",
+   "панели",
+   "солнечная генерация",
+   "солнечные панели"
+  ],
+  "telemetry_doc": [
+   "мощность генерации, Вт",
+   "напряжение PV, В",
+   "ток PV, А",
+   "состояние MPPT-канала 1",
+   "состояние всех MPPT-каналов",
+   "количество активных MPPT-каналов"
+  ],
+  "controls_doc": [
+   "включить MPPT-канал 1",
+   "отключить MPPT-канал 1",
+   "включить все MPPT-каналы",
+   "отключить все MPPT-каналы",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "supply_ventilation_01",
+  "code_name": "supply_ventilation",
+  "title": "Приточная вентиляция / рекуператор",
+  "system": "ventilation",
+  "system_ru": "Вентиляция",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "airflow_m3_h",
+    "unit": "m³/h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 240.4
+   },
+   {
+    "key": "fresh_air_m3_h",
+    "unit": "m³/h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 120.2
+   },
+   {
+    "key": "supply_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 19.2
+   },
+   {
+    "key": "supply_humidity_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 57.2
+   },
+   {
+    "key": "filter_clog_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 12.0
+   },
+   {
+    "key": "filter_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 16.9
+   },
+   {
+    "key": "speed_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 35.0
+   },
+   {
+    "key": "mode",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "MIXED",
+    "enum_hint": "MIXED"
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ON",
+    "enum_hint": "ON"
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "airflow_m3_h"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "airflow_m3_h"
+    ]
+   },
+   {
+    "action": "set_speed",
+    "label": "изменить скорость",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "speed_pct",
+     "airflow_m3_h"
+    ]
+   },
+   {
+    "action": "set_mode",
+    "label": "переключить режим",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "value_schema": {
+     "enum": [
+      "RECIRCULATION",
+      "FRESH_AIR",
+      "MIXED"
+     ]
+    },
+    "verify_by": [
+     "mode"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить аварию",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "alarm_code"
+    ]
+   }
+  ],
+  "aliases": [
+   "вентиляция",
+   "приточная вентиляция",
+   "рекуператор"
+  ],
+  "telemetry_doc": [
+   "расход воздуха, м³/ч",
+   "температура приточного воздуха, °C",
+   "влажность приточного воздуха, %",
+   "состояние фильтров",
+   "потребляемая мощность, Вт",
+   "режим (`RECIRCULATION`, `FRESH_AIR`, `MIXED`)",
+   "состояние (`ON`, `OFF`, `FAULT`)"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить",
+   "изменить скорость",
+   "переключить режим",
+   "сбросить аварию",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "thermal_insulation_01",
+  "code_name": "greenhouse_fablab",
+  "title": "Теплица ФабЛаб",
+  "system": "ms_tuk",
+  "system_ru": "МС-ТЮК",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "fans_pwm",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "fans_rpm",
+    "unit": "rpm",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "doors",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "pressure_pa",
+    "unit": "Pa",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "voc_index",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "dust_adc",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 182
+   },
+   {
+    "key": "dust_voltage_v",
+    "unit": "V",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.89
+   },
+   {
+    "key": "locks",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "vacuum_on",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "poll_interval_ms",
+    "unit": "m/s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 500
+   },
+   {
+    "key": "crc_errors",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1725
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "set_fan_pwm",
+    "label": "задать PWM вентилятора",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "value_schema": {
+     "index": [
+      0,
+      5
+     ],
+     "value": [
+      0,
+      255
+     ]
+    },
+    "verify_by": [
+     "fans_pwm",
+     "fans_rpm"
+    ]
+   },
+   {
+    "action": "set_lock",
+    "label": "заблокировать/разблокировать замок",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "value_schema": {
+     "index": [
+      0,
+      1
+     ],
+     "locked": "bool"
+    },
+    "verify_by": [
+     "locks"
+    ]
+   },
+   {
+    "action": "set_vacuum",
+    "label": "включить/выключить пылесос",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "vacuum_on"
+    ]
+   },
+   {
+    "action": "set_poll_interval",
+    "label": "период опроса шины",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "notes": "опрос чаще 500 мс вызывает коллизию на шине",
+    "verify_by": [
+     "poll_interval_ms",
+     "crc_errors"
+    ]
+   }
+  ],
+  "aliases": [
+   "fablab",
+   "мс-тюк",
+   "теплица fablab"
+  ],
+  "telemetry_doc": [
+   "RPM вентиляторов (6 шт, индексы 0..5), оборотов в минуту",
+   "PWM вентиляторов (6 шт, индексы 0..5), от 0 до 255",
+   "Температура BMP280 (3 датчика, индексы 0..2), градусы Цельсия",
+   "Давление BMP280 (3 датчика, индексы 0..2), Па",
+   "Влажность DHT11 (3 датчика, индексы 0..2), %RH",
+   "VOC Index SGP40 (2 датчика, индексы 0..1), значение 1..500",
+   "Датчик пыли GP2Y1010AU0F (1 шт), ADC 0..1023 и напряжение",
+   "Положение концевиков дверей (2 шт, индексы 0..1), открыт/закрыт",
+   "Состояние магнитных замков (2 шт, индексы 0..1), заблокирован/разблокирован",
+   "Состояние пылесоса (1 шт), включен/выключен",
+   "Шина опроса: `poll_interval_ms`, `crc_errors` (кризис №22)",
+   "Режим неисправности стенда `fault_mode` / `fault_fan` (скрыт от участника) Внутри бокса стоит 3D-принтер `printer_3d_01`. Индексы: вентиляторы 0–3 — вдув, 4–5 — выдув; BMP280/DHT11 0–1 и SGP40 0 — внутри, последний индекс — снаружи."
+  ],
+  "controls_doc": [
+   "Установить PWM конкретного вентилятора (индекс 0..5), от 0 до 255",
+   "Установить состояние магнитного замка (индекс 0..1), заблокировать/разблокировать",
+   "Включить/выключить пылесос (mode 1/0)",
+   "Период опроса шины (`set_poll_interval`, мс) — настройка сервера",
+   "Режим неисправности (`set_fault_mode`, только админ/сценарий)",
+   "Открыть/закрыть дверь (`set_door`) — физическое действие Оператора, только при открытом замке Пока на шине коллизия (№22, опрос чаще 500 мс), команды агента на запись (вентиляторы, замки, пылесос) теряются без ошибки.",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "thermal_insulation_02",
+  "code_name": "greenhouse_chemlab",
+  "title": "Теплица Химлаб",
+  "system": "ms_tuk",
+  "system_ru": "МС-ТЮК",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "fans_pwm",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "fans_rpm",
+    "unit": "rpm",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "doors",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "pressure_pa",
+    "unit": "Pa",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "gas_adc",
+    "unit": null,
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "gas_voltage_v",
+    "unit": "V",
+    "kind": "list",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "lock",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "LOCKED",
+    "enum_hint": "LOCKED"
+   },
+   {
+    "key": "relay_fan_level",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "set_fan_pwm",
+    "label": "задать PWM вентилятора",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "value_schema": {
+     "index": [
+      0,
+      1
+     ],
+     "value": [
+      0,
+      255
+     ]
+    },
+    "verify_by": [
+     "fans_pwm",
+     "fans_rpm"
+    ]
+   },
+   {
+    "action": "set_relay_fan_level",
+    "label": "уровень релейного вентилятора",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "value_schema": {
+     "level": [
+      0,
+      10
+     ]
+    },
+    "verify_by": [
+     "relay_fan_level"
+    ]
+   },
+   {
+    "action": "set_lock",
+    "label": "общий магнитный замок",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "lock"
+    ]
+   }
+  ],
+  "aliases": [
+   "теплица химлаб",
+   "химлаб"
+  ],
+  "telemetry_doc": [
+   "RPM вентиляторов Arduino (2 шт, индексы 0..1), оборотов в минуту",
+   "PWM вентиляторов Arduino (2 шт, индексы 0..1), от 0 до 255",
+   "Температура BMP280 (2 датчика, индексы 0..1), градусы Цельсия",
+   "Давление BMP280 (2 датчика, индексы 0..1), Па",
+   "Влажность DHT11 (2 датчика, индексы 0..1), %RH",
+   "Газ MQ-2 (2 датчика, индексы 0..1), ADC 0..1023 и напряжение (НЕ VOC Index)",
+   "Положение концевиков дверей (2 шт, индексы 0..1), открыт/закрыт",
+   "Состояние общего магнитного замка (управляет обоими замками одновременно), заблокирован/разблокирован",
+   "Уровень релейного вентилятора lmp8 (0..10), номер комбинации реле"
+  ],
+  "controls_doc": [
+   "Установить PWM конкретного вентилятора Arduino (индекс 0..1), от 0 до 255",
+   "Установить уровень релейного вентилятора lmp8 (0..10), где каждое число — комбинация реле",
+   "Заблокировать/разблокировать общий магнитный замок (оба замка одновременно)",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "water_filter_01",
+  "code_name": "water_filter",
+  "title": "Система фильтрации воды",
+  "system": "water",
+  "system_ru": "Водоснабжение",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "turbidity_ntu",
+    "unit": "NTU",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.04
+   },
+   {
+    "key": "ph",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 7.22
+   },
+   {
+    "key": "tds_ppm",
+    "unit": "ppm",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 161.0
+   },
+   {
+    "key": "residual_chlorine_mg_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.69
+   },
+   {
+    "key": "pressure_drop_bar",
+    "unit": "bar",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.32
+   },
+   {
+    "key": "active_filter",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "MAIN",
+    "enum_hint": "MAIN"
+   },
+   {
+    "key": "wear_pct",
+    "unit": "%",
+    "kind": "struct",
+    "trust": "unknown",
+    "sample": null,
+    "item_fields": [
+     "MAIN",
+     "RESERVE"
+    ]
+   },
+   {
+    "key": "filter_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "hours_to_replacement",
+    "unit": null,
+    "kind": "computed",
+    "trust": "computed",
+    "sample": 920.5
+   },
+   {
+    "key": "system_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "warning_active",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "source_turbidity_ntu",
+    "unit": "NTU",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.5
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "switch_to_reserve",
+    "label": "переключить на резервный фильтр",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "active_filter",
+     "filter_state"
+    ]
+   },
+   {
+    "action": "force_flush",
+    "label": "принудительная промывка",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "pressure_drop_bar",
+     "turbidity_ntu"
+    ]
+   },
+   {
+    "action": "reset_warning",
+    "label": "сбросить предупреждение",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "warning_active",
+     "filter_state"
+    ]
+   }
+  ],
+  "aliases": [
+   "фильтр",
+   "фильтрация"
+  ],
+  "telemetry_doc": [
+   "мутность",
+   "pH",
+   "TDS",
+   "остаточный хлор",
+   "перепад давления на фильтрах",
+   "состояние фильтров (`OK`, `WARNING`, `REPLACE`)",
+   "время до замены картриджа",
+   "состояние системы"
+  ],
+  "controls_doc": [
+   "переключить на резервный фильтр",
+   "принудительная промывка",
+   "сбросить предупреждение",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "water_pump_01",
+  "code_name": "water_pump",
+  "title": "Насосная станция / скважина",
+  "system": "water",
+  "system_ru": "Водоснабжение",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "flow_l_min",
+    "unit": "L/min",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "pressure_bar",
+    "unit": "bar",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 3.3
+   },
+   {
+    "key": "duty_cycle_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.8
+   },
+   {
+    "key": "source_level_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 85.0
+   },
+   {
+    "key": "motor_current_a",
+    "unit": "A",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "motor_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 14.2
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ON",
+    "enum_hint": "ON"
+   },
+   {
+    "key": "running",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "power_limit_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 100.0
+   },
+   {
+    "key": "alarm",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": false
+   },
+   {
+    "key": "alarm_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "delivered_l_min",
+    "unit": "L/min",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.273
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить насос",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "flow_l_min",
+     "pressure_bar"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить насос",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "flow_l_min"
+    ]
+   },
+   {
+    "action": "reset_alarm",
+    "label": "сбросить аварию",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "alarm",
+     "alarm_code"
+    ]
+   },
+   {
+    "action": "set_power_limit",
+    "label": "ограничить мощность",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "power_limit_pct",
+     "power_w"
+    ]
+   }
+  ],
+  "aliases": [
+   "насос",
+   "скважина"
+  ],
+  "telemetry_doc": [
+   "расход воды, л/мин",
+   "давление, бар",
+   "уровень в скважине/резервуаре, %",
+   "ток двигателя, А",
+   "потребляемая мощность, Вт",
+   "температура двигателя, °C",
+   "состояние (`ON`, `OFF`, `FAULT`)",
+   "наличие аварии"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить",
+   "сбросить аварию",
+   "ограничить мощность",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "water_tank_01",
+  "code_name": "water_tank",
+  "title": "Резервуар чистой воды",
+  "system": "water",
+  "system_ru": "Водоснабжение",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "capacity_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2000.0
+   },
+   {
+    "key": "volume_l",
+    "unit": "L",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1416.1
+   },
+   {
+    "key": "level_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 70.8
+   },
+   {
+    "key": "water_temp_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 14.9
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NORMAL",
+    "enum_hint": "NORMAL"
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.979
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [],
+  "aliases": [
+   "вода",
+   "резервуар"
+  ],
+  "telemetry_doc": [
+   "уровень воды, %",
+   "объём, л",
+   "температура воды, °C",
+   "состояние (`NORMAL`, `LOW`, `CRITICAL`, `OVERFLOW`)",
+   "достоверность показаний"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "weather_station_01",
+  "code_name": "weather_station",
+  "title": "Метеостанция",
+  "system": "weather",
+  "system_ru": "Метеорология",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "temperature_c",
+    "unit": "°C",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 9.6
+   },
+   {
+    "key": "humidity_pct",
+    "unit": "%",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 85.1
+   },
+   {
+    "key": "illuminance_lux",
+    "unit": "lx",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0
+   },
+   {
+    "key": "wind_speed_ms",
+    "unit": "m/s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 6.7
+   },
+   {
+    "key": "wind_direction_deg",
+    "unit": "°",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 54
+   },
+   {
+    "key": "wind_direction",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "NE",
+    "enum_hint": "NE"
+   },
+   {
+    "key": "pressure_hpa",
+    "unit": "hPa",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 1009.6
+   },
+   {
+    "key": "precipitation_mm_h",
+    "unit": "h",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 0.0
+   },
+   {
+    "key": "data_available",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "sensor_state",
+    "unit": null,
+    "kind": "state",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   },
+   {
+    "key": "confidence",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "meta",
+    "sample": 0.967
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [],
+  "aliases": [
+   "метеостанция",
+   "погода"
+  ],
+  "telemetry_doc": [
+   "температура наружного воздуха, °C",
+   "относительная влажность, %",
+   "освещённость",
+   "скорость ветра, м/с",
+   "направление ветра",
+   "атмосферное давление",
+   "осадки",
+   "состояние метеостанции",
+   "доступность данных"
+  ],
+  "controls_doc": [
+   "нет",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "wind_turbine_01",
+  "code_name": "wind_turbine",
+  "title": "Ветрогенератор",
+  "system": "energy",
+  "system_ru": "Энергетика",
+  "params": [
+   {
+    "key": "online",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": true
+   },
+   {
+    "key": "wind_speed_ms",
+    "unit": "m/s",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 6.97
+   },
+   {
+    "key": "rpm",
+    "unit": null,
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 431.0
+   },
+   {
+    "key": "power_w",
+    "unit": "W",
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 51.4
+   },
+   {
+    "key": "state",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": "ON",
+    "enum_hint": "ON"
+   },
+   {
+    "key": "available",
+    "unit": null,
+    "kind": "state",
+    "trust": "sensor",
+    "sample": true
+   },
+   {
+    "key": "fault_code",
+    "unit": null,
+    "kind": "unknown",
+    "trust": "unknown",
+    "sample": null
+   },
+   {
+    "key": "updated_at",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": 1791925200.0
+   },
+   {
+    "key": "status",
+    "unit": null,
+    "kind": "meta",
+    "trust": "meta",
+    "sample": "OK",
+    "enum_hint": "OK"
+   }
+  ],
+  "controls": [
+   {
+    "action": "turn_on",
+    "label": "включить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "power_w"
+    ]
+   },
+   {
+    "action": "turn_off",
+    "label": "выключить",
+    "allowed_for": "agent",
+    "api_confirmed": false,
+    "verify_by": [
+     "state",
+     "power_w"
+    ]
+   }
+  ],
+  "aliases": [
+   "ветер",
+   "ветрогенератор"
+  ],
+  "telemetry_doc": [
+   "скорость ветра, м/с",
+   "скорость вращения, RPM",
+   "вырабатываемая мощность, Вт",
+   "состояние (`ON`, `OFF`, `FAULT`)",
+   "доступность"
+  ],
+  "controls_doc": [
+   "включить",
+   "выключить",
+   ""
+  ],
+  "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ }
+]

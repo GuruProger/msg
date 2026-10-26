@@ -1,0 +1,22 @@
+[
+ {"src":"smart_panel_01.line","dst":"node.online","relation":"powers","note":"без питания линии устройство на ней online:false"},
+ {"src":"power_loss","dst":"telemetry_loss","relation":"causes","note":"потеря питания → пропадает телеметрия зависимых узлов"},
+ {"src":"telemetry_loss","dst":"unknown_state","relation":"causes","note":"отсутствие данных ≠ остановка оборудования"},
+ {"src":"IL_CO2","dst":"printer_3d_01.hold_level","relation":"triggers","note":"hold_reason=IL_CO2"},
+ {"src":"IL_CO2","dst":"cnc_01.hold_level","relation":"triggers"},
+ {"src":"IL_CONDENSATE","dst":"printer_3d_01.hold_level","relation":"triggers"},
+ {"src":"IL_CONDENSATE","dst":"cnc_01.hold_level","relation":"triggers"},
+ {"src":"IL_SMOKE","dst":"production_stop","relation":"triggers"},
+ {"src":"IL_LOAD_SHED","dst":"smart_panel_01.line_off","relation":"triggers","note":"сброс второстепенных линий"},
+ {"src":"IL_OVERCURRENT","dst":"smart_panel_01.line_trip","relation":"triggers"},
+ {"src":"fume_extraction_01.state","dst":"POL-005","relation":"enables","note":"без вытяжки пайка запрещена"},
+ {"src":"equipment_cooling_01.alarm","dst":"cnc_01.quality_state","relation":"affects","note":"перегрев шпинделя → дефекты и остановка"},
+ {"src":"supply_ventilation_01.filter_state","dst":"climate.co2_ppm","relation":"affects","note":"засорённый фильтр снижает приток"},
+ {"src":"battery_01.soc_pct","dst":"autonomy_forecast_h","relation":"computes"},
+ {"src":"solar_panels_01.power_w","dst":"battery_01.power_w","relation":"charges","note":"через инвертор"},
+ {"src":"solar_inverter_01.error_code","dst":"production.capacity","relation":"limits"},
+ {"src":"climate_sensor_01.sensor_state","dst":"dome_automation_01.primary_co2_sensor","relation":"selects","note":"недостоверный датчик → смена основного через set_primary_sensor"},
+ {"src":"network_link_01.link_state","dst":"edge_compute_01.state","relation":"affects"},
+ {"src":"backup_comms_01.available","dst":"operator_contact","relation":"enables","note":"деградация связи → работа по резервному сценарию"},
+ {"src":"water_pump_01.state","dst":"water_tank_01.level_pct","relation":"fills"}
+]

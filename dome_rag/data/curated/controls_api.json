@@ -1,0 +1,175 @@
+{
+  "solar_panels_01": [
+    {"action": "ENABLE_MPPT_CHANNEL_N", "label": "включить MPPT-канал N", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["mppt_channels_enabled", "active_mppt_count", "power_w"]},
+    {"action": "DISABLE_MPPT_CHANNEL_N", "label": "отключить MPPT-канал N", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["mppt_channels_enabled", "power_w"]},
+    {"action": "ENABLE_MPPT_ALL", "label": "включить все MPPT-каналы", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["all_mppt_enabled", "power_w"]},
+    {"action": "DISABLE_MPPT_ALL", "label": "отключить все MPPT-каналы", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["all_mppt_enabled", "power_w"]}
+  ],
+  "solar_inverter_01": [
+    {"action": "START_CELL_BALANCING", "label": "запустить балансировку АКБ", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["balancing_state"]},
+    {"action": "CANCEL_BALANCING", "label": "остановить балансировку АКБ", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["balancing_state"]},
+    {"action": "SET_MODE", "value_schema": {"enum": ["HYBRID", "GRID_ONLY"]}, "label": "переключить режим инвертора", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["mode", "ac_source"]},
+    {"action": "SET_MAX_CHARGE_CURRENT", "label": "задать максимальный ток заряда", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["battery_current_a", "battery_charge_blocked"]},
+    {"action": "reset_error", "label": "сбросить ошибку инвертора", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["error", "error_code"]},
+    {"action": "set_fan", "label": "управление вентилятором", "allowed_for": "agent", "api_confirmed": false, "notes": "только если поддерживается оборудованием", "verify_by": ["fan_state", "fan_current_a"]}
+  ],
+  "battery_01": [],
+  "wind_turbine_01": [
+    {"action": "turn_on", "label": "включить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "power_w"]},
+    {"action": "turn_off", "label": "выключить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "power_w"]}
+  ],
+  "dizel_1": [
+    {"action": "turn_on", "label": "включить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "power_w"]},
+    {"action": "turn_off", "label": "выключить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "power_w"]},
+    {"action": "preheat", "label": "прогрев", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["preheat_state", "start_attempts"]}
+  ],
+  "fuel_tank_01": [
+    {"action": "transfer_fuel", "label": "перекачка топлива между баками", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["volume_l", "level_pct"]}
+  ],
+  "smart_panel_01": [
+    {"action": "line_on", "label": "включить линию", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["lines[N].state", "lines[N].power_w", "lines[N].current_a"]},
+    {"action": "line_off", "label": "отключить линию", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["lines[N].state", "lines[N].power_w"]},
+    {"action": "reset_protection", "label": "сбросить срабатывание защиты", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["lines[N].protection_state", "lines[N].state"]},
+    {"action": "reset_line_error", "label": "сбросить ошибку линии", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["lines[N].alarm", "lines[N].state"]}
+  ],
+  "printer_3d_01": [
+    {"action": "upload_file", "label": "загрузить файл печати", "allowed_for": "agent", "api_confirmed": true, "notes": "только подготовленные организаторами файлы, до 16 МБ", "verify_by": ["files"]},
+    {"action": "delete_file", "label": "удалить файл печати", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["files"]},
+    {"action": "start_job", "label": "запустить печать", "allowed_for": "agent", "api_confirmed": true, "preconditions": ["bed_clear == true", "hold_level == null"], "verify_by": ["state", "progress_pct", "nozzle_temp_c"]},
+    {"action": "resume", "label": "снять с паузы", "allowed_for": "agent", "api_confirmed": true, "notes": "3 пустые попытки → ALARM на 20 минут и отмена задания", "verify_by": ["state", "progress_pct", "hold_level"]},
+    {"action": "home", "label": "найти нулевое положение", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["homed"]},
+    {"action": "set_speed", "label": "изменить скорость печати", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"int": [50, 200]}, "verify_by": ["speed_pct"]},
+    {"action": "move", "label": "перемещение по осям", "allowed_for": "agent", "api_confirmed": true, "notes": "не во время печати", "verify_by": ["x_mm", "y_mm", "z_mm"]}
+  ],
+  "cnc_01": [
+    {"action": "start_job", "label": "запустить фрезеровку", "allowed_for": "agent", "api_confirmed": true, "preconditions": ["homed == true", "hold_level == null"], "verify_by": ["state", "progress_pct", "spindle_rpm"]},
+    {"action": "resume", "label": "снять с паузы", "allowed_for": "agent", "api_confirmed": true, "notes": "3 пустые попытки → ALARM на 20 минут", "verify_by": ["state", "progress_pct", "hold_level"]},
+    {"action": "home", "label": "найти нулевое положение", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["homed"]},
+    {"action": "move", "label": "перемещение по осям", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"x": [-300, 300], "y": [-180, 180], "z": [-80, 80], "feedrate": [10, 5000]}, "verify_by": ["x_mm", "y_mm", "z_mm"]},
+    {"action": "set_zero", "label": "обнулить координаты", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"enum": ["xyz", "xy", "z"]}, "verify_by": ["wco_mm"]},
+    {"action": "probe_z", "label": "измерить поверхность заготовки", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"distance": [0.1, 30], "feed": [1, 300], "plate_thickness": [0, 30], "retract": [0, 20]}, "verify_by": ["last_probe"]}
+  ],
+  "equipment_cooling_01": [
+    {"action": "turn_on", "label": "включить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "coolant_flow_l_min"]},
+    {"action": "turn_off", "label": "выключить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "coolant_flow_l_min"]},
+    {"action": "set_speed", "label": "изменить скорость", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["speed_pct"]},
+    {"action": "reset_alarm", "label": "сбросить аварию", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "alarm_code"]}
+  ],
+  "material_inventory_01": [],
+  "climate_sensor_01": [
+    {"action": "recalibrate", "label": "перекалибровать датчик", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["sensor_state", "confidence"]}
+  ],
+  "climate_sensor_02": [
+    {"action": "recalibrate", "label": "перекалибровать датчик", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["sensor_state", "confidence"]}
+  ],
+  "climate_sensor_03": [
+    {"action": "recalibrate", "label": "перекалибровать датчик", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["sensor_state", "confidence"]}
+  ],
+  "air_quality_sensor_01": [
+    {"action": "recalibrate", "label": "перекалибровать датчик", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["sensor_state", "confidence"]}
+  ],
+  "smoke_detector_01": [
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm_state", "smoke_detected"]}
+  ],
+  "smoke_detector_02": [
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm_state", "smoke_detected"]}
+  ],
+  "fume_extraction_01": [
+    {"action": "turn_on", "label": "включить вытяжку", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["enabled", "power_w", "fan_rpm"]},
+    {"action": "turn_off", "label": "выключить вытяжку", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["enabled", "power_w"]},
+    {"action": "reset_alarm", "label": "сбросить аварию", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "alarm_code"]}
+  ],
+  "weather_station_01": [],
+  "seysmo_01": [
+    {"action": "set_threshold", "label": "задать порог сейсмодатчика", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["threshold_mm_s"]}
+  ],
+  "water_pump_01": [
+    {"action": "turn_on", "label": "включить насос", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "flow_l_min", "pressure_bar"]},
+    {"action": "turn_off", "label": "выключить насос", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "flow_l_min"]},
+    {"action": "reset_alarm", "label": "сбросить аварию", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "alarm_code"]},
+    {"action": "set_power_limit", "label": "ограничить мощность", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["power_limit_pct", "power_w"]}
+  ],
+  "water_tank_01": [],
+  "water_filter_01": [
+    {"action": "switch_to_reserve", "label": "переключить на резервный фильтр", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["active_filter", "filter_state"]},
+    {"action": "force_flush", "label": "принудительная промывка", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["pressure_drop_bar", "turbidity_ntu"]},
+    {"action": "reset_warning", "label": "сбросить предупреждение", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["warning_active", "filter_state"]}
+  ],
+  "fire_suppression_01": [
+    {"action": "manual_start_zone", "label": "ручной пуск зоны", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["state", "active_zone"]},
+    {"action": "stop", "label": "остановить", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["state"]},
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "fault_code"]},
+    {"action": "block_automation", "label": "блокировать автоматику", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["automation_blocked"]},
+    {"action": "unblock_automation", "label": "разблокировать автоматику", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["automation_blocked"]}
+  ],
+  "access_control_01": [
+    {"action": "lock_door", "label": "заблокировать дверь", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["doors.DOOR.locked"]},
+    {"action": "unlock_door", "label": "разблокировать дверь", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["doors.DOOR.locked"]},
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "alarm_reason"]},
+    {"action": "lockdown", "label": "режим блокировки", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["lockdown"]}
+  ],
+  "radiation_sensor_01": [
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm_state"]},
+    {"action": "set_thresholds", "label": "задать пороги", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["warning_threshold", "alarm_threshold"]}
+  ],
+  "chem_sensor_01": [
+    {"action": "reset_alarm", "label": "сбросить тревогу", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm_state"]},
+    {"action": "set_thresholds", "label": "задать пороги", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["warning_threshold", "alarm_threshold"]}
+  ],
+  "supply_ventilation_01": [
+    {"action": "turn_on", "label": "включить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "airflow_m3_h"]},
+    {"action": "turn_off", "label": "выключить", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["state", "airflow_m3_h"]},
+    {"action": "set_speed", "label": "изменить скорость", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["speed_pct", "airflow_m3_h"]},
+    {"action": "set_mode", "label": "переключить режим", "allowed_for": "agent", "api_confirmed": false, "value_schema": {"enum": ["RECIRCULATION", "FRESH_AIR", "MIXED"]}, "verify_by": ["mode"]},
+    {"action": "reset_alarm", "label": "сбросить аварию", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["alarm", "alarm_code"]}
+  ],
+  "dome_sealing_01": [
+    {"action": "open_valves", "label": "открыть клапаны", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["valve_positions_pct", "pressure_diff_pa"]},
+    {"action": "close_valves", "label": "закрыть клапаны", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["valve_positions_pct"]},
+    {"action": "seal_zone", "label": "герметизировать зону", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["seal_ready", "leak_detected"]},
+    {"action": "reset_alarm", "label": "сбросить ошибку", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["fault_code", "state"]}
+  ],
+  "radio_01": [
+    {"action": "set_frequency", "label": "изменить основную частоту", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["frequency_mhz", "reception"]},
+    {"action": "set_protocol", "label": "изменить протокол", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["protocol", "reception"]}
+  ],
+  "backup_comms_01": [
+    {"action": "switch_channel", "label": "переключить канал", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["active_channel", "available"]},
+    {"action": "set_traffic_priority", "label": "приоритет трафика", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["traffic_priority"]},
+    {"action": "set_protocol", "label": "изменить протокол", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["protocol", "available"]}
+  ],
+  "edge_compute_01": [
+    {"action": "restart_service", "label": "перезапустить сервис", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["services", "state"]},
+    {"action": "limit_load", "label": "ограничить нагрузку", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["load_limit_pct", "cpu_load_pct"]},
+    {"action": "sync_time", "label": "синхронизировать время", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["clock_offset_s"]},
+    {"action": "reboot", "label": "перезагрузить узел", "allowed_for": "operator", "api_confirmed": false, "verify_by": ["state", "uptime_h"]}
+  ],
+  "network_link_01": [
+    {"action": "reconnect", "label": "переподключиться к узлу", "allowed_for": "agent", "api_confirmed": false, "kind": "service_action", "verify_by": ["link_state", "online"]}
+  ],
+  "thermal_insulation_01": [
+    {"action": "set_fan_pwm", "label": "задать PWM вентилятора", "allowed_for": "agent", "api_confirmed": false, "value_schema": {"index": [0, 5], "value": [0, 255]}, "verify_by": ["fans_pwm", "fans_rpm"]},
+    {"action": "set_lock", "label": "заблокировать/разблокировать замок", "allowed_for": "agent", "api_confirmed": false, "value_schema": {"index": [0, 1], "locked": "bool"}, "verify_by": ["locks"]},
+    {"action": "set_vacuum", "label": "включить/выключить пылесос", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["vacuum_on"]},
+    {"action": "set_poll_interval", "label": "период опроса шины", "allowed_for": "agent", "api_confirmed": false, "notes": "опрос чаще 500 мс вызывает коллизию на шине", "verify_by": ["poll_interval_ms", "crc_errors"]}
+  ],
+  "thermal_insulation_02": [
+    {"action": "set_fan_pwm", "label": "задать PWM вентилятора", "allowed_for": "agent", "api_confirmed": false, "value_schema": {"index": [0, 1], "value": [0, 255]}, "verify_by": ["fans_pwm", "fans_rpm"]},
+    {"action": "set_relay_fan_level", "label": "уровень релейного вентилятора", "allowed_for": "agent", "api_confirmed": false, "value_schema": {"level": [0, 10]}, "verify_by": ["relay_fan_level"]},
+    {"action": "set_lock", "label": "общий магнитный замок", "allowed_for": "agent", "api_confirmed": false, "verify_by": ["lock"]}
+  ],
+  "dome_automation_01": [
+    {"action": "set_data_trust", "label": "пометить источник данных недостоверным", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"node": "str", "trust": ["OK", "UNRELIABLE", "FAILED"]}, "verify_by": ["data_trust"]},
+    {"action": "set_primary_sensor", "label": "сменить основной датчик CO₂", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["primary_co2_sensor"]},
+    {"action": "reset_interlock", "label": "сбросить интерлок", "allowed_for": "agent", "api_confirmed": true, "notes": "только после устранения причины", "verify_by": ["interlocks"]},
+    {"action": "block_interlock", "label": "блокировать интерлок", "allowed_for": "operator", "api_confirmed": true, "verify_by": ["interlocks"]},
+    {"action": "unblock_interlock", "label": "разблокировать интерлок", "allowed_for": "operator", "api_confirmed": true, "verify_by": ["interlocks"]},
+    {"action": "acknowledge", "label": "квитировать событие автоматики", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["events"]},
+    {"action": "set_ventilation_auto", "label": "автоматика вентиляции", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["ventilation_auto"]},
+    {"action": "set_diesel_autostart", "label": "автозапуск дизель-генератора", "allowed_for": "agent", "api_confirmed": true, "verify_by": ["diesel_autostart"]}
+  ],
+  "meeting_01": [
+    {"action": "post_message", "label": "отправить сообщение в чат", "allowed_for": "agent", "api_confirmed": true, "value_schema": {"text": "<=4000", "to": "<=64"}, "verify_by": [], "notes": "не более 10 сообщений за 10 секунд"},
+    {"action": "read_messages", "label": "прочитать историю чата", "allowed_for": "agent", "api_confirmed": true, "kind": "query", "value_schema": {"since_id": "int", "limit": "1..200"}}
+  ]
+}

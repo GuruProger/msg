@@ -1,0 +1,154 @@
+[
+ {
+  "id": "knowledge/00_assistant.md",
+  "path": "knowledge/00_assistant.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "ee0946a3624e2b90",
+  "bytes": 29498
+ },
+ {
+  "id": "knowledge/01_legend.md",
+  "path": "knowledge/01_legend.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "a4fd52a3ca50495f",
+  "bytes": 32793
+ },
+ {
+  "id": "knowledge/02_station.md",
+  "path": "knowledge/02_station.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "9372482ef36c29f2",
+  "bytes": 43721
+ },
+ {
+  "id": "knowledge/03_energy.md",
+  "path": "knowledge/03_energy.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "f8e3fa0448fd60a6",
+  "bytes": 74210
+ },
+ {
+  "id": "knowledge/04_telemetry.md",
+  "path": "knowledge/04_telemetry.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "87585570ec60918c",
+  "bytes": 77633
+ },
+ {
+  "id": "knowledge/05_production.md",
+  "path": "knowledge/05_production.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "df166d130f9a0105",
+  "bytes": 75109
+ },
+ {
+  "id": "knowledge/06_microclimate.md",
+  "path": "knowledge/06_microclimate.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "103028e4e9230f2d",
+  "bytes": 19302
+ },
+ {
+  "id": "knowledge/07_rules.md",
+  "path": "knowledge/07_rules.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "7a8cc6ed95d125b3",
+  "bytes": 28890
+ },
+ {
+  "id": "knowledge/08_safety.md",
+  "path": "knowledge/08_safety.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "173af38ed763a175",
+  "bytes": 19720
+ },
+ {
+  "id": "knowledge/09_faults.md",
+  "path": "knowledge/09_faults.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "6bfe0461a2a5782e",
+  "bytes": 48216
+ },
+ {
+  "id": "knowledge/10_procedures.md",
+  "path": "knowledge/10_procedures.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "4050fcf6a26ef9e6",
+  "bytes": 31298
+ },
+ {
+  "id": "knowledge/11_reference.md",
+  "path": "knowledge/11_reference.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "cd4cb171401b499b",
+  "bytes": 34143
+ },
+ {
+  "id": "knowledge/12_history.md",
+  "path": "knowledge/12_history.md",
+  "kind": "knowledge",
+  "priority": 3,
+  "checksum": "aeb8acfc270431e3",
+  "bytes": 27741
+ },
+ {
+  "id": "00_Краткая_справка_API.md",
+  "path": "00_Краткая_справка_API.md",
+  "kind": "root",
+  "priority": 4,
+  "checksum": "b4e1570436bab0d9",
+  "bytes": 15818
+ },
+ {
+  "id": "01_API.md",
+  "path": "01_API.md",
+  "kind": "root",
+  "priority": 4,
+  "checksum": "1935fdb3e5afb546",
+  "bytes": 57636
+ },
+ {
+  "id": "dome_sandbox_nodes.md",
+  "path": "dome_sandbox_nodes.md",
+  "kind": "root",
+  "priority": 3,
+  "checksum": "e3fe068109c79636",
+  "bytes": 33100
+ },
+ {
+  "id": "02_Задание_и_оценка.md",
+  "path": "02_Задание_и_оценка.md",
+  "kind": "root",
+  "priority": 3,
+  "checksum": "8f5b0223019b7a93",
+  "bytes": 9549
+ },
+ {
+  "id": "03_Требования_к_агенту.md",
+  "path": "03_Требования_к_агенту.md",
+  "kind": "root",
+  "priority": 4,
+  "checksum": "92d098e89118130f",
+  "bytes": 16675
+ },
+ {
+  "id": "04_Как_создаётся_агент.md",
+  "path": "04_Как_создаётся_агент.md",
+  "kind": "root",
+  "priority": 3,
+  "checksum": "82256b23ce6a320a",
+  "bytes": 5936
+ }
+]
