@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import os
@@ -146,6 +147,7 @@ class FakeAPI:
         force: bool = False,
         verify: bool = True,
         max_age: float = 5.0,
+        allow_without_before: bool = False,
     ) -> dict:
         record = {
             "node_id": node_id,
@@ -651,6 +653,71 @@ class DelayedLineAPI(FakeAPI):
         return copy.deepcopy(self.telemetry)
 
 
+class GatedVerificationAPI(FakeAPI):
+    """Block the next-frame read so tests can inspect the fast loop."""
+
+    def __init__(self, telemetry: dict) -> None:
+        super().__init__(telemetry)
+        self.verify_started = asyncio.Event()
+        self.verify_release = asyncio.Event()
+
+    async def get_telemetry(
+        self,
+        node_id: str | None = None,
+        *,
+        max_age: float = 5.0,
+        next_frame: bool = False,
+    ) -> dict:
+        if node_id is not None and next_frame:
+            self.verify_started.set()
+            await self.verify_release.wait()
+        return await super().get_telemetry(
+            node_id,
+            max_age=max_age,
+            next_frame=next_frame,
+        )
+
+
+class BeforeAwareAPI(FakeAPI):
+    """Refuse non-emergency controls when before-telemetry is unavailable."""
+
+    async def control_device(
+        self,
+        node_id: str,
+        action: str,
+        value=MISSING,
+        *,
+        dry_run: bool = False,
+        force: bool = False,
+        verify: bool = True,
+        max_age: float = 5.0,
+        allow_without_before: bool = False,
+    ) -> dict:
+        if not allow_without_before:
+            return {
+                "success": False,
+                "accepted": False,
+                "blocked": True,
+                "unknown": False,
+                "sent": False,
+                "error": "fresh before-telemetry unavailable: test",
+                "before_error": "test",
+                "after": None,
+                "diff": None,
+                "verify_error": None,
+            }
+        return await super().control_device(
+            node_id,
+            action,
+            value,
+            dry_run=dry_run,
+            force=force,
+            verify=verify,
+            max_age=max_age,
+            allow_without_before=allow_without_before,
+        )
+
+
 class NoEffectAPI(FakeAPI):
     """Accept a command but leave telemetry unchanged."""
 
@@ -664,6 +731,7 @@ class NoEffectAPI(FakeAPI):
         force: bool = False,
         verify: bool = True,
         max_age: float = 5.0,
+        allow_without_before: bool = False,
     ) -> dict:
         record = {
             "node_id": node_id,
@@ -757,6 +825,78 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(observed["state"], "OFF")
             self.assertGreaterEqual(api.telemetry_reads, 2)
             await api.close()
+
+    async def test_slow_verification_does_not_block_safety_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            data = false_co2_telemetry()
+            line8 = next(
+                line
+                for line in data["nodes"]["smart_panel_01"]["lines"]
+                if int(line["line"]) == 8
+            )
+            line8["state"] = "ON"
+            line8["protection_state"] = "TRIPPED"
+            api = GatedVerificationAPI(data)
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+
+            slow = ActionSpec(
+                key="slow-verification",
+                node_id="smart_panel_01",
+                action="reset_protection",
+                value=8,
+                reason="hold the verifier",
+                expect=expected_effect(
+                    "smart_panel_01",
+                    "reset_protection",
+                    8,
+                    timeout_s=1.5,
+                ),
+            )
+            agent._enqueue_action(slow, None)
+            await asyncio.wait_for(api.verify_started.wait(), timeout=1.0)
+
+            started = time.monotonic()
+            await asyncio.wait_for(agent._cycle(), timeout=1.0)
+            self.assertLess(time.monotonic() - started, 0.8)
+
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                if any(
+                    item["action"] == "set_primary_sensor"
+                    and item["value"] == "climate_sensor_02"
+                    for item in api.actions
+                ) and any(
+                    item["action"] == "reset_interlock"
+                    and item["value"] == "IL_CO2"
+                    for item in api.actions
+                ):
+                    break
+                await asyncio.sleep(0.01)
+            self.assertFalse(api.verify_release.is_set())
+            self.assertTrue(
+                any(
+                    item["action"] == "set_primary_sensor"
+                    and item["value"] == "climate_sensor_02"
+                    for item in api.actions
+                )
+            )
+            self.assertTrue(
+                any(
+                    item["action"] == "reset_interlock"
+                    and item["value"] == "IL_CO2"
+                    for item in api.actions
+                )
+            )
+
+            api.verify_release.set()
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(queue.join() for queue in agent._action_queues.values())
+                ),
+                timeout=3.0,
+            )
 
     async def test_no_effect_blocks_retry_until_cooldown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

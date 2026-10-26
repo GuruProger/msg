@@ -55,6 +55,7 @@ LLM_MESSAGE_MIN_INTERVAL_S = 600.0
 LLM_CONTROL_INTERVAL_S = 10.0
 PENDING_TTL_S = 300.0
 ACTION_FAILURE_COOLDOWN_S = 900.0
+ACTION_DRAIN_TIMEOUT_S = 7.0
 
 _CONFIRM_WORDS = {"да", "подтверждаю", "выполняй", "выполнить", "ок", "давай", "yes", "confirm"}
 _CANCEL_WORDS = {"отмена", "отменить", "не надо", "нет", "стоп", "cancel", "no", "stop"}
@@ -145,6 +146,13 @@ class DomeAgent:
         self._dry_run_seen: set[str] = set()
         self._blocked_seen: set[str] = set()
         self._pending_action_keys: set[str] = set()
+        self._action_queues: dict[
+            str, asyncio.Queue[tuple[float, int, ActionSpec, int | None, bool]]
+        ] = {}
+        self._action_tasks: dict[str, asyncio.Task[None]] = {}
+        self._queued_action_keys: set[str] = set()
+        self._action_seq = 0
+        self._action_error: Exception | None = None
         self._advice_task: asyncio.Task[None] | None = None
         self._control_task: asyncio.Task[None] | None = None
         self._last_control_at = 0.0
@@ -242,6 +250,7 @@ class DomeAgent:
                 )
             except Exception:
                 pass
+        await self._drain_action_queue()
         for task_attr in ("_control_task", "_advice_task"):
             task = getattr(self, task_attr, None)
             setattr(self, task_attr, None)
@@ -272,6 +281,34 @@ class DomeAgent:
                 self.log.close()
             except Exception:
                 pass
+
+    async def _drain_action_queue(self) -> None:
+        queues = list(self._action_queues.values())
+        tasks = list(self._action_tasks.values())
+        if not tasks:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(queue.join() for queue in queues)),
+                timeout=ACTION_DRAIN_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            self.log.write(
+                "action_queue",
+                event="drain_timeout",
+                pending=sum(queue.qsize() for queue in queues),
+                in_flight=len(self._queued_action_keys),
+            )
+        self._action_tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
 
     def _past_deadline(self) -> bool:
         return self._deadline is not None and time.monotonic() >= self._deadline
@@ -382,6 +419,7 @@ class DomeAgent:
     # ------------------------------------------------------------------
 
     async def _cycle(self) -> None:
+        self._raise_action_error()
         data = await self.api.get_telemetry(max_age=TELEMETRY_MAX_AGE_S)
         snapshot = Snapshot(data, co2_override=self.state.co2_override)
         self.log.set_dome_time(snapshot.clock)
@@ -409,14 +447,15 @@ class DomeAgent:
             decision_ref = None
 
         if self.config.mode == "auto" or self.config.dry_run:
-            for action in sorted(decision.actions, key=lambda item: -item.priority):
-                await self._execute_action(action, decision_ref)
+            self._enqueue_actions(decision.actions, decision_ref)
         else:
             # NORMAL: only the explicitly approved protective exceptions are
             # automatic. Everything else is proposed by the LLM and confirmed.
-            for action in sorted(decision.actions, key=lambda item: -item.priority):
-                if is_auto_protective(action):
-                    await self._execute_protective(action, decision_ref)
+            self._enqueue_actions(
+                [action for action in decision.actions if is_auto_protective(action)],
+                decision_ref,
+                protective=True,
+            )
 
         for message in decision.messages:
             await self._send_operator_message(
@@ -564,6 +603,89 @@ class DomeAgent:
         self._last_decision_at = time.monotonic()
         self._last_situation = decision.situation
         return ref
+
+    def _raise_action_error(self) -> None:
+        error = self._action_error
+        if error is None:
+            return
+        self._action_error = None
+        raise error
+
+    def _ensure_action_worker(self, lane: str) -> asyncio.Queue[
+        tuple[float, int, ActionSpec, int | None, bool]
+    ] | None:
+        if self._stop.is_set():
+            return None
+        queue = self._action_queues.get(lane)
+        if queue is None:
+            queue = asyncio.Queue()
+            self._action_queues[lane] = queue
+        task = self._action_tasks.get(lane)
+        if task is None or task.done():
+            self._action_tasks[lane] = asyncio.create_task(
+                self._action_worker(lane, queue),
+                name=f"dome-agent-actions:{lane or 'system'}",
+            )
+        return queue
+
+    def _enqueue_actions(
+        self,
+        actions: list[ActionSpec],
+        decision_ref: int | None,
+        *,
+        protective: bool = False,
+    ) -> None:
+        for action in sorted(actions, key=lambda item: -item.priority):
+            self._enqueue_action(action, decision_ref, protective=protective)
+
+    def _enqueue_action(
+        self,
+        action: ActionSpec,
+        decision_ref: int | None,
+        *,
+        protective: bool = False,
+    ) -> None:
+        if self._stop.is_set():
+            return
+        queue_key = f"{'protective:' if protective else ''}{action.key}"
+        if queue_key in self._queued_action_keys:
+            return
+        lane = str(action.node_id or "").strip().casefold()
+        queue = self._ensure_action_worker(lane)
+        if queue is None:
+            return
+        self._queued_action_keys.add(queue_key)
+        self._action_seq += 1
+        queue.put_nowait(
+            (-float(action.priority), self._action_seq, action, decision_ref, protective)
+        )
+
+    async def _action_worker(
+        self,
+        lane: str,
+        queue: asyncio.Queue[tuple[float, int, ActionSpec, int | None, bool]],
+    ) -> None:
+        while True:
+            _priority, _seq, action, decision_ref, protective = await queue.get()
+            queue_key = f"{'protective:' if protective else ''}{action.key}"
+            try:
+                if protective:
+                    await self._execute_protective(action, decision_ref)
+                else:
+                    await self._execute_action(action, decision_ref)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._action_error = exc
+                self._log_exception(
+                    "action_worker",
+                    exc,
+                    node_id=action.node_id,
+                    action=action.action,
+                )
+            finally:
+                self._queued_action_keys.discard(queue_key)
+                queue.task_done()
 
     async def _execute_action(self, action: ActionSpec, decision_ref: int | None) -> None:
         if self.config.dry_run:
