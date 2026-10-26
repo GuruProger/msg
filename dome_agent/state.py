@@ -24,6 +24,7 @@ def _default_state() -> dict[str, Any]:
         "task": None,
         "operator_requests": {},
         "last_actions": {},
+        "failed_until": {},
         "co2_override": None,
         "notes": {},
     }
@@ -57,6 +58,8 @@ class StateStore:
             merged["operator_requests"] = {}
         if not isinstance(merged.get("last_actions"), dict):
             merged["last_actions"] = {}
+        if not isinstance(merged.get("failed_until"), dict):
+            merged["failed_until"] = {}
         if not isinstance(merged.get("notes"), dict):
             merged["notes"] = {}
         self.data = merged
@@ -157,10 +160,17 @@ class StateStore:
         *,
         success: bool | None = None,
         now: float | None = None,
+        failure_cooldown_s: float = 0.0,
     ) -> None:
         now = time.time() if now is None else now
         actions = self.data.setdefault("last_actions", {})
         actions[key] = {"at": float(now), "success": success}
+        if success is True:
+            self.data.setdefault("failed_until", {}).pop(str(key), None)
+        elif success is False and failure_cooldown_s > 0:
+            failures = self.data.setdefault("failed_until", {})
+            failures[str(key)] = float(now) + max(0.0, float(failure_cooldown_s))
+            self._prune_failed_until()
         # Keep the file small and bounded.
         if len(actions) > 200:
             ordered = sorted(
@@ -170,6 +180,58 @@ class StateStore:
             )[:200]
             self.data["last_actions"] = dict(ordered)
         self.save()
+
+    def mark_action_failure(
+        self,
+        key: str,
+        cooldown_s: float,
+        *,
+        now: float | None = None,
+    ) -> None:
+        """Remember that ``key`` recently failed verification."""
+        now = time.time() if now is None else now
+        failures = self.data.setdefault("failed_until", {})
+        failures[str(key)] = float(now) + max(0.0, float(cooldown_s))
+        self._prune_failed_until()
+        self.save()
+
+    def action_failed_recently(self, key: str, *, now: float | None = None) -> bool:
+        """Return True while the failure cooldown for ``key`` is still active."""
+        now = time.time() if now is None else now
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            return False
+        try:
+            until = float(failures.get(str(key)) or 0.0)
+        except (TypeError, ValueError):
+            return False
+        return until > now
+
+    def failure_remaining(self, key: str, *, now: float | None = None) -> float:
+        """Seconds left before a failed action may be retried."""
+        now = time.time() if now is None else now
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            return 0.0
+        try:
+            until = float(failures.get(str(key)) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, until - now)
+
+    def _prune_failed_until(self) -> None:
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            self.data["failed_until"] = {}
+            return
+        if len(failures) <= 200:
+            return
+        ordered = sorted(
+            failures.items(),
+            key=lambda item: float(item[1] or 0.0),
+            reverse=True,
+        )[:200]
+        self.data["failed_until"] = dict(ordered)
 
     def cooldown_remaining(self, key: str, cooldown_s: float, *, now: float | None = None) -> float:
         now = time.time() if now is None else now

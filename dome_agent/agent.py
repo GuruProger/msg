@@ -29,7 +29,7 @@ from dome_control.client import (
     DomeTimeout,
 )
 
-from .analysis import Snapshot, as_bool
+from .analysis import Snapshot
 from .chat import ChatMessage, new_operator_messages, parse_operator_task
 from .config import AgentConfig
 from .control import (
@@ -46,6 +46,7 @@ from .llm import Advice, DeepSeekAdvisor
 from .logging import AgentLog
 from .rules import NO_VALUE, ActionSpec, OutgoingMessage, RuleEngine, RuleResult
 from .state import StateStore
+from .verification import ExpectedEffect, expected_effect
 
 CHAT_POLL_INTERVAL_S = 3.0
 TELEMETRY_MAX_AGE_S = 5.0
@@ -53,6 +54,7 @@ LOOP_INTERVAL_S = 1.0
 LLM_MESSAGE_MIN_INTERVAL_S = 600.0
 LLM_CONTROL_INTERVAL_S = 10.0
 PENDING_TTL_S = 300.0
+ACTION_FAILURE_COOLDOWN_S = 900.0
 
 _CONFIRM_WORDS = {"да", "подтверждаю", "выполняй", "выполнить", "ок", "давай", "yes", "confirm"}
 _CANCEL_WORDS = {"отмена", "отменить", "не надо", "нет", "стоп", "cancel", "no", "stop"}
@@ -91,133 +93,6 @@ def _alert_key(alerts: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
         (str(alert.get("code") or ""), str(alert.get("node_id") or ""))
         for alert in alerts
     )
-
-
-def _upper(value: Any) -> str:
-    return str(value or "").strip().upper()
-
-
-def _line_entry(node: Mapping[str, Any], number: Any) -> Mapping[str, Any] | None:
-    try:
-        wanted = int(number)
-    except (TypeError, ValueError):
-        return None
-    for line in node.get("lines") or []:
-        if not isinstance(line, Mapping):
-            continue
-        try:
-            if int(line.get("line")) == wanted:
-                return line
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _action_confirmed(action: ActionSpec, node: Any) -> bool | None:
-    if not isinstance(node, Mapping) or not node:
-        return False
-    name = str(action.action or "").strip().casefold()
-    state = _upper(node.get("state"))
-    if name in {"line_on", "line_off"}:
-        line = _line_entry(node, action.value)
-        if line is None:
-            return False
-        expected = "ON" if name == "line_on" else "OFF"
-        return _upper(line.get("state")) == expected
-    if name == "reset_protection":
-        line = _line_entry(node, action.value)
-        if line is None:
-            return False
-        return _upper(line.get("protection_state")) == "ARMED"
-    if name == "start_job":
-        if state not in {"PRINTING", "RUNNING"}:
-            return False
-        expected = str(action.value or "").strip()
-        current = str(node.get("file_name") or "").strip()
-        return not expected or not current or current.casefold() == expected.casefold()
-    if name == "resume":
-        hold = _upper(node.get("hold_level"))
-        return (
-            not as_bool(node.get("paused"))
-            and hold not in {"MANDATORY", "SAFETY", "ALARM"}
-            and state not in {"PAUSED", "ALARM", "ERROR"}
-        )
-    if name == "home":
-        return as_bool(node.get("homed"))
-    if name == "turn_on":
-        if "enabled" in node:
-            return as_bool(node.get("enabled"))
-        return state in {"ON", "RUNNING", "ACTIVE", "AVAILABLE"}
-    if name == "set_mode":
-        return _upper(node.get("mode")) == _upper(action.value)
-    if name == "set_primary_sensor":
-        return str(node.get("primary_co2_sensor") or "").strip() == str(action.value or "").strip()
-    if name == "reset_interlock":
-        interlocks = node.get("interlocks")
-        if not isinstance(interlocks, Mapping):
-            return False
-        entry = interlocks.get(str(action.value))
-        if not isinstance(entry, Mapping):
-            return False
-        return _upper(entry.get("state")) not in {"TRIPPED", "BLOCKED", "ALARM"}
-    if name == "reset_error":
-        return not as_bool(node.get("error")) and not node.get("error_code")
-    if name == "set_fan":
-        expected = _upper(action.value)
-        return _upper(node.get("fan_state")) == expected or _upper(node.get("fan_mode")) == expected
-    if name == "set_data_trust":
-        trust = node.get("data_trust")
-        value = action.value
-        if not isinstance(trust, Mapping) or not isinstance(value, Mapping):
-            return None
-        suspect = str(value.get("node") or "")
-        param = str(value.get("param") or "")
-        expected = _upper(value.get("trust"))
-        found = trust.get(f"{suspect}.{param}")
-        if found is None:
-            nested = trust.get(suspect)
-            if isinstance(nested, Mapping):
-                found = nested.get(param)
-        if found is None:
-            return None
-        return _upper(found) == expected
-    return None
-
-
-def _observed(action: ActionSpec, node: Any) -> dict[str, Any] | None:
-    if not isinstance(node, Mapping):
-        return None
-    name = str(action.action or "").strip().casefold()
-    if name in {"line_on", "line_off", "reset_protection"}:
-        line = _line_entry(node, action.value)
-        if line is None:
-            return None
-        return {
-            "line": line.get("line"),
-            "state": line.get("state"),
-            "protection_state": line.get("protection_state"),
-            "current_a": line.get("current_a"),
-            "power_w": line.get("power_w"),
-        }
-    if name in {"start_job", "resume", "home"}:
-        keys = ("state", "paused", "homed", "file_name", "progress_pct", "hold_level", "hold_reason")
-    elif name in {"turn_on", "set_mode"}:
-        keys = ("state", "enabled", "mode", "airflow_pct")
-    elif name == "set_fan":
-        keys = ("fan_state", "fan_mode", "inverter_temp_c")
-    elif name == "reset_error":
-        keys = ("state", "error", "error_code")
-    elif name == "set_primary_sensor":
-        keys = ("primary_co2_sensor",)
-    elif name == "reset_interlock":
-        interlocks = node.get("interlocks")
-        entry = interlocks.get(str(action.value)) if isinstance(interlocks, Mapping) else None
-        return {"interlock": action.value, "entry": entry}
-    elif name == "set_data_trust":
-        return {"data_trust": node.get("data_trust")}
-    else:
-        keys = ("state",)
-    return {key: node.get(key) for key in keys if key in node}
 
 
 class DomeAgent:
@@ -269,6 +144,7 @@ class DomeAgent:
         self._last_alert_key: tuple[tuple[str, str], ...] = ()
         self._dry_run_seen: set[str] = set()
         self._blocked_seen: set[str] = set()
+        self._pending_action_keys: set[str] = set()
         self._advice_task: asyncio.Task[None] | None = None
         self._control_task: asyncio.Task[None] | None = None
         self._last_control_at = 0.0
@@ -708,6 +584,41 @@ class DomeAgent:
                     ref=decision_ref,
                 )
             return
+
+        expect = (
+            action.expect
+            if isinstance(action.expect, ExpectedEffect)
+            else expected_effect(
+                action.node_id,
+                action.action,
+                action.value,
+                has_value=action.value is not NO_VALUE,
+            )
+        )
+        lock_key = self._action_lock_key(action)
+        if (
+            not self.config.yolo
+            and not self.config.dry_run
+            and self.state.action_failed_recently(action.key)
+        ):
+            self._log_pending_block(
+                action,
+                request,
+                decision_ref,
+                "recent verification failed: retry cooldown is active",
+                expect.description,
+            )
+            return
+        if not self._claim_action_key(lock_key):
+            self._log_pending_block(
+                action,
+                request,
+                decision_ref,
+                "action is already pending verification",
+                expect.description,
+            )
+            return
+
         verify = action.verify and not self.config.yolo
         started = time.perf_counter()
         try:
@@ -753,24 +664,39 @@ class DomeAgent:
                 unsafe=decision.unsafe,
                 latency_ms=round((time.perf_counter() - started) * 1000.0, 1),
                 ref=decision_ref,
+                expect=expect.description,
             )
             self.stats["actions"] += 1
             verified = True
             verification_error = None
             if verify and not self.config.dry_run:
-                verified, observed, verification_error = await self._verify_action(action, result)
+                verify_started = time.monotonic()
+                verified, observed, verification_error = await self._verify_action(
+                    action,
+                    result,
+                    expect=expect,
+                )
+                waited_s = round(time.monotonic() - verify_started, 1)
                 self.log.write(
                     "verification",
                     ref=action_ref,
-                    expected=self._expected(action),
+                    expected=expect.description,
                     observed=observed,
                     ok=verified,
                     error=verification_error,
+                    waited_s=waited_s,
+                    no_effect=not verified,
                 )
             if not success or not verified:
                 self.stats["action_failures"] += 1
             if not self.config.dry_run:
-                self._mark_action(action.key, success and verified)
+                self._mark_action(
+                    action.key,
+                    success and verified,
+                    failure_cooldown_s=(
+                        0.0 if success and verified else ACTION_FAILURE_COOLDOWN_S
+                    ),
+                )
             if (
                 success
                 and verified
@@ -794,9 +720,14 @@ class DomeAgent:
                 dry_run=self.config.dry_run,
                 unsafe=decision.unsafe,
                 ref=decision_ref,
+                expect=expect.description,
             )
             if not self.config.dry_run:
-                self._mark_action(action.key, False)
+                self._mark_action(
+                    action.key,
+                    False,
+                    failure_cooldown_s=ACTION_FAILURE_COOLDOWN_S,
+                )
             raise
         except Exception as exc:
             self.stats["action_failures"] += 1
@@ -809,25 +740,86 @@ class DomeAgent:
                 dry_run=self.config.dry_run,
                 unsafe=decision.unsafe,
                 ref=decision_ref,
+                expect=expect.description,
             )
             if not self.config.dry_run:
-                self._mark_action(action.key, False)
+                self._mark_action(
+                    action.key,
+                    False,
+                    failure_cooldown_s=ACTION_FAILURE_COOLDOWN_S,
+                )
+        finally:
+            self._release_action_key(lock_key)
+
+    @staticmethod
+    def _action_lock_key(action: ActionSpec) -> str:
+        value = "" if action.value is NO_VALUE else repr(action.value)
+        return (
+            f"{str(action.node_id or '').strip().casefold()}:"
+            f"{str(action.action or '').strip().casefold()}:{value}"
+        )
+
+    def _claim_action_key(self, key: str) -> bool:
+        if key in self._pending_action_keys:
+            return False
+        self._pending_action_keys.add(key)
+        return True
+
+    def _release_action_key(self, key: str) -> None:
+        self._pending_action_keys.discard(key)
+
+    def _log_pending_block(
+        self,
+        action: ActionSpec,
+        request: Mapping[str, Any],
+        decision_ref: int | None,
+        reason: str,
+        expected: str,
+    ) -> None:
+        if action.key in self._blocked_seen:
+            return
+        self._blocked_seen.add(action.key)
+        self.stats["actions_blocked"] += 1
+        self.log.write(
+            "action_blocked",
+            request=request,
+            reason=reason,
+            unsafe=False,
+            ref=decision_ref,
+            expect=expected,
+        )
 
     async def _verify_action(
         self,
         action: ActionSpec,
         result: Mapping[str, Any],
+        *,
+        expect: ExpectedEffect | None = None,
     ) -> tuple[bool, Any, str | None]:
+        expected = expect or (
+            action.expect
+            if isinstance(action.expect, ExpectedEffect)
+            else expected_effect(
+                action.node_id,
+                action.action,
+                action.value,
+                has_value=action.value is not NO_VALUE,
+            )
+        )
         after = result.get("after")
-        confirmed = _action_confirmed(action, after)
+        confirmed = expected.check(after) if isinstance(after, Mapping) else False
         if confirmed is True:
-            return True, _observed(action, after), None
+            return True, expected.observe(after), None
         if confirmed is None:
             diff = result.get("diff")
-            return bool(diff), diff if diff is not None else _observed(action, after), result.get("verify_error")
+            return (
+                bool(diff),
+                diff if diff is not None else expected.observe(after),
+                result.get("verify_error"),
+            )
         last = after
         last_error = result.get("verify_error")
-        deadline = time.monotonic() + 6.0
+        deadline = time.monotonic() + max(0.1, expected.timeout_s)
         while time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -850,35 +842,25 @@ class DomeAgent:
                 last_error = "telemetry response has no node"
                 continue
             last = node
-            if _action_confirmed(action, node) is True:
-                return True, _observed(action, node), None
-        return False, _observed(action, last), last_error or "telemetry did not confirm action"
+            if expected.check(node) is True:
+                return True, expected.observe(node), None
+        return False, expected.observe(last), last_error or "telemetry did not confirm action"
 
-    def _mark_action(self, key: str, success: bool) -> None:
+    def _mark_action(
+        self,
+        key: str,
+        success: bool,
+        *,
+        failure_cooldown_s: float = 0.0,
+    ) -> None:
         try:
-            self.state.mark_action(key, success=success)
+            self.state.mark_action(
+                key,
+                success=success,
+                failure_cooldown_s=failure_cooldown_s,
+            )
         except OSError as exc:
             self._log_exception("state_action", exc)
-
-    def _expected(self, action: ActionSpec) -> str:
-        value = "" if action.value is NO_VALUE else f" {action.value!r}"
-        if action.action in {"line_on", "line_off"}:
-            return f"{action.node_id}.line {action.value} = {'ON' if action.action == 'line_on' else 'OFF'}"
-        if action.action == "start_job":
-            return f"{action.node_id}.state changes to PRINTING/RUNNING for {action.value!r}"
-        if action.action == "resume":
-            return f"{action.node_id} is no longer paused"
-        if action.action == "home":
-            return f"{action.node_id}.homed or state becomes operational"
-        if action.action == "set_primary_sensor":
-            return f"{action.node_id}.primary_co2_sensor = {action.value!r}"
-        if action.action == "set_data_trust":
-            return f"{action.node_id} data trust is applied"
-        if action.action == "reset_interlock":
-            return f"{action.node_id}.{action.value} is no longer tripped"
-        if action.action == "reset_protection":
-            return f"{action.node_id}.line {action.value} protection = ARMED"
-        return f"{action.node_id}.{action.action}{value} is reflected in telemetry"
 
     async def _send_operator_message(
         self,
@@ -1264,6 +1246,38 @@ class DomeAgent:
         self._last_decision_at = time.monotonic()
         return ref
 
+    def _check_model_effect(
+        self,
+        action: ActionSpec,
+        response: Mapping[str, Any],
+    ) -> tuple[bool, Any, str | None]:
+        expect = (
+            action.expect
+            if isinstance(action.expect, ExpectedEffect)
+            else expected_effect(
+                action.node_id,
+                action.action,
+                action.value,
+                has_value=action.value is not NO_VALUE,
+            )
+        )
+        after = response.get("after")
+        confirmed = expect.check(after) if isinstance(after, Mapping) else False
+        if confirmed is True:
+            return True, expect.observe(after), None
+        if confirmed is None:
+            diff = response.get("diff")
+            return (
+                bool(diff),
+                diff if diff is not None else expect.observe(after),
+                response.get("verify_error"),
+            )
+        return (
+            False,
+            expect.observe(after),
+            response.get("verify_error") or "telemetry did not confirm action",
+        )
+
     async def _execute_model_commands(
         self,
         commands: tuple[ModelCommand, ...],
@@ -1294,6 +1308,7 @@ class DomeAgent:
     ) -> dict[str, Any]:
         request = command.as_dict()
         unsafe = bool(self.config.yolo or force)
+        action: ActionSpec | None = None
         if command.tool == "control":
             if not self.config.control_enabled and not self.config.yolo:
                 return self._block_model(
@@ -1317,6 +1332,16 @@ class DomeAgent:
                 action=command.action,
                 value=command.value,
                 reason=command.reason,
+                expect=(
+                    command.expect
+                    if isinstance(command.expect, ExpectedEffect)
+                    else expected_effect(
+                        command.node_id,
+                        command.action,
+                        command.value,
+                        has_value=command.value is not NO_VALUE,
+                    )
+                ),
             )
             if not force and not self.config.yolo:
                 gate_decision = self.gate.check(action, dry_run=self.config.dry_run)
@@ -1328,12 +1353,37 @@ class DomeAgent:
                         forceable=True,
                         unsafe=bool(gate_decision.unsafe),
                     )
-            result = await self.tool.execute(
-                command,
-                force=force or self.config.yolo,
-                verify=not self.config.yolo,
-                dry_run=self.config.dry_run,
-            )
+            if (
+                not force
+                and not self.config.yolo
+                and not self.config.dry_run
+                and self.state.action_failed_recently(action.key)
+            ):
+                return self._block_model(
+                    command,
+                    "recent verification failed: retry cooldown is active",
+                    source=source,
+                    forceable=True,
+                    unsafe=unsafe,
+                )
+            lock_key = self._action_lock_key(action)
+            if not self._claim_action_key(lock_key):
+                return self._block_model(
+                    command,
+                    "action is already pending verification",
+                    source=source,
+                    forceable=False,
+                    unsafe=unsafe,
+                )
+            try:
+                result = await self.tool.execute(
+                    command,
+                    force=force or self.config.yolo,
+                    verify=not self.config.yolo,
+                    dry_run=self.config.dry_run,
+                )
+            finally:
+                self._release_action_key(lock_key)
         elif command.tool == "send_message" and self.config.dry_run:
             result = {
                 "ok": True,
@@ -1349,20 +1399,74 @@ class DomeAgent:
                 "success": bool(result.get("ok")),
                 "error": result.get("error"),
             }
-        if result.get("ok"):
+        else:
+            response = dict(response)
+
+        result_ok = bool(result.get("ok"))
+        ok = result_ok
+        verified = True
+        verification_observed: Any = None
+        verification_error = response.get("verify_error")
+        if (
+            action is not None
+            and result_ok
+            and not self.config.yolo
+            and not self.config.dry_run
+        ):
+            verified, verification_observed, verification_error = self._check_model_effect(
+                action,
+                response,
+            )
+            ok = result_ok and verified
+            response["verified"] = verified
+            response["observed"] = verification_observed
+            response["verify_error"] = verification_error
+        if ok:
             self.stats["actions"] += 1
         else:
             self.stats["action_failures"] += 1
-        self.log.write(
+        log_response = {
+            key: value
+            for key, value in response.items()
+            if key not in {"after", "diff"}
+        }
+        action_ref = self.log.write(
             "action",
             request=request,
-            response=dict(response),
+            response=log_response,
             reason=command.reason,
             dry_run=self.config.dry_run,
             unsafe=unsafe,
             source=source,
             force=force,
+            expect=getattr(action.expect, "description", None) if action is not None else None,
         )
+        if (
+            action is not None
+            and result_ok
+            and not self.config.yolo
+            and not self.config.dry_run
+        ):
+            self.log.write(
+                "verification",
+                ref=action_ref,
+                expected=getattr(action.expect, "description", None),
+                observed=verification_observed,
+                ok=verified,
+                error=verification_error,
+                waited_s=0.0,
+                no_effect=not verified,
+            )
+        if action is not None and not self.config.dry_run:
+            self._mark_action(
+                action.key,
+                ok,
+                failure_cooldown_s=0.0 if ok else ACTION_FAILURE_COOLDOWN_S,
+            )
+        if not ok and verification_error:
+            result["error"] = verification_error
+        result["ok"] = ok
+        result["result"] = response
         return result
 
     def _block_model(

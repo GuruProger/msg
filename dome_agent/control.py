@@ -137,6 +137,7 @@ class ModelCommand:
     text: str = ""
     to: str = "operator"
     reason: str = ""
+    expect: Any | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         tool = str(self.tool or "").strip().casefold()
@@ -175,6 +176,7 @@ class ModelCommand:
             action=str(getattr(action, "action", "")),
             value=getattr(action, "value", NO_VALUE),
             reason=reason or str(getattr(action, "reason", "")),
+            expect=getattr(action, "expect", None),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -188,6 +190,7 @@ class ModelCommand:
             "text": self.text,
             "to": self.to,
             "reason": self.reason,
+            "expect": getattr(self.expect, "description", None),
         }
 
 
@@ -389,6 +392,8 @@ class DomeTool:
                     "error": result.get("error") or response_error,
                     "dry_run": bool(result.get("dry_run")),
                     "verify_error": result.get("verify_error"),
+                    "after": result.get("after"),
+                    "diff": result.get("diff"),
                 },
             }
         if command.tool == "query":

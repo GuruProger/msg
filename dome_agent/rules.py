@@ -175,6 +175,7 @@ class ActionSpec:
     reason: str = ""
     verify: bool = True
     priority: int = 50
+    expect: Any | None = field(default=None, compare=False, repr=False)
 
     def request(self) -> dict[str, Any]:
         request: dict[str, Any] = {
@@ -195,6 +196,7 @@ class ActionSpec:
             "reason": self.reason,
             "verify": self.verify,
             "priority": self.priority,
+            "expect": getattr(self.expect, "description", None),
         }
 
 
@@ -257,7 +259,10 @@ class RuleEngine:
             return True
         if self.state is None:
             return True
-        return self.state.action_allowed(key, cooldown_s, now=self.clock())
+        now = self.clock()
+        if self.state.action_failed_recently(key, now=now):
+            return False
+        return self.state.action_allowed(key, cooldown_s, now=now)
 
     def _action(
         self,
@@ -273,6 +278,8 @@ class RuleEngine:
     ) -> ActionSpec | None:
         if not self._allowed(key, cooldown_s):
             return None
+        from .verification import expected_effect
+
         return ActionSpec(
             key=key,
             node_id=node_id,
@@ -281,6 +288,12 @@ class RuleEngine:
             reason=reason,
             verify=verify,
             priority=priority,
+            expect=expected_effect(
+                node_id,
+                action,
+                value,
+                has_value=value is not NO_VALUE,
+            ),
         )
 
     def decide(
