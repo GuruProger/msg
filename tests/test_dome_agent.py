@@ -37,6 +37,7 @@ from dome_agent.llm import DeepSeekAdvisor, parse_advice
 from dome_agent.logging import AgentLog
 from dome_agent.rules import ActionSpec, RuleEngine
 from dome_agent.state import StateStore
+from dome_agent.verification import ExpectedEffect, expected_effect
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURE = REPO / "tests/fixtures/telemetry.jsonl"
@@ -395,6 +396,24 @@ class LoggingStateTests(unittest.TestCase):
             self.assertFalse(loaded.action_allowed("x", 10.0, now=105.0))
             self.assertTrue(loaded.action_allowed("x", 10.0, now=111.0))
 
+    def test_failed_action_cooldown_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            state = StateStore(path)
+            state.mark_action(
+                "line8-off",
+                success=False,
+                now=100.0,
+                failure_cooldown_s=30.0,
+            )
+            self.assertTrue(state.action_failed_recently("line8-off", now=101.0))
+            self.assertEqual(state.failure_remaining("line8-off", now=101.0), 29.0)
+            self.assertFalse(state.action_failed_recently("line8-off", now=131.0))
+            loaded = StateStore(path)
+            self.assertTrue(loaded.action_failed_recently("line8-off", now=101.0))
+            loaded.mark_action("line8-off", success=True, now=102.0)
+            self.assertFalse(loaded.action_failed_recently("line8-off", now=103.0))
+
     def test_log_is_jsonl_and_redacts_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log = AgentLog(tmp, secrets=("secret-value",))
@@ -552,6 +571,43 @@ class DelayedLineAPI(FakeAPI):
         return copy.deepcopy(self.telemetry)
 
 
+class NoEffectAPI(FakeAPI):
+    """Accept a command but leave telemetry unchanged."""
+
+    async def control_device(
+        self,
+        node_id: str,
+        action: str,
+        value=MISSING,
+        *,
+        dry_run: bool = False,
+        force: bool = False,
+        verify: bool = True,
+        max_age: float = 5.0,
+    ) -> dict:
+        record = {
+            "node_id": node_id,
+            "action": action,
+            "value": None if value is MISSING else value,
+            "dry_run": dry_run,
+            "force": force,
+            "verify": verify,
+        }
+        self.actions.append(record)
+        if dry_run:
+            return {"dry_run": True, "request": record}
+        node = self.telemetry.setdefault("nodes", {}).setdefault(node_id, {})
+        return {
+            "success": True,
+            "accepted": True,
+            "node_id": node_id,
+            "action": action,
+            "diff": {},
+            "after": copy.deepcopy(node),
+            "verify_error": None,
+        }
+
+
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_dry_run_false_co2_never_sends_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -622,6 +678,100 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertGreaterEqual(api.telemetry_reads, 2)
             await api.close()
 
+    async def test_no_effect_blocks_retry_until_cooldown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            data = base_telemetry()
+            line8 = next(
+                line for line in data["nodes"]["smart_panel_01"]["lines"] if int(line["line"]) == 8
+            )
+            line8["state"] = "ON"
+            api = NoEffectAPI(data)
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="test-line-off-no-effect",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test no effect",
+                expect=expected_effect(
+                    "smart_panel_01",
+                    "line_off",
+                    8,
+                    timeout_s=0.05,
+                ),
+            )
+            await agent._execute_action(action, None)
+            self.assertTrue(agent.state.action_failed_recently(action.key))
+            sent = len(api.actions)
+            await agent._execute_action(action, None)
+            self.assertEqual(len(api.actions), sent)
+            records = read_logs(config.log_dir)
+            self.assertTrue(
+                any(
+                    record["kind"] == "verification"
+                    and record["ok"] is False
+                    and record["no_effect"] is True
+                    for record in records
+                )
+            )
+            self.assertTrue(
+                any(
+                    record["kind"] == "action_blocked"
+                    and "retry cooldown" in record["reason"]
+                    for record in records
+                )
+            )
+
+    async def test_duplicate_pending_action_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="test-line-off-pending",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test duplicate",
+            )
+            agent._pending_action_keys.add(agent._action_lock_key(action))
+            await agent._execute_action(action, None)
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            self.assertTrue(
+                any(
+                    record["kind"] == "action_blocked"
+                    and "pending verification" in record["reason"]
+                    for record in records
+                )
+            )
+
+    async def test_unknown_action_uses_diff_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="test-unknown-action",
+                node_id="smart_panel_01",
+                action="mystery_action",
+                reason="test unknown",
+            )
+            result = {
+                "success": True,
+                "diff": {"changed": True},
+                "after": copy.deepcopy(base_telemetry()["nodes"]["smart_panel_01"]),
+                "verify_error": None,
+            }
+            ok, observed, error = await agent._verify_action(action, result)
+            self.assertTrue(ok)
+            self.assertEqual(observed, {"changed": True})
+            self.assertIsNone(error)
+
     async def test_run_seconds_stops_without_signal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=True, run_seconds=0.2)
@@ -633,6 +783,19 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             records = read_logs(config.log_dir)
             self.assertEqual(records[-1]["kind"], "stop")
             self.assertEqual(records[-1]["reason"], "run_seconds")
+
+
+class VerificationTests(unittest.TestCase):
+    def test_expected_effect_line_and_unknown_action(self) -> None:
+        effect = expected_effect("smart_panel_01", "line_off", 8)
+        self.assertTrue(effect.check({"lines": [{"line": 8, "state": "OFF"}]}))
+        self.assertFalse(effect.check({"lines": [{"line": 8, "state": "ON"}]}))
+        self.assertEqual(
+            effect.observe({"lines": [{"line": 8, "state": "OFF"}]})["state"],
+            "OFF",
+        )
+        unknown = expected_effect("smart_panel_01", "mystery", None)
+        self.assertIsNone(unknown.check({"state": "IDLE"}))
 
 
 class GateTests(unittest.TestCase):
@@ -927,6 +1090,99 @@ class GateAgentTests(unittest.IsolatedAsyncioTestCase):
             blocked = [record for record in records if record["kind"] == "action_blocked"]
             self.assertTrue(blocked)
             self.assertIn("hard-denied", blocked[0]["reason"])
+
+    async def test_model_command_uses_explicit_effect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            effect = ExpectedEffect(
+                description="custom effect",
+                check=lambda node: True,
+                observe=lambda node: {"custom": True},
+            )
+            command = ModelCommand(
+                tool="control",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test",
+                expect=effect,
+            )
+            result = await agent._execute_model_command(command, force=False, source="test")
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["result"]["verified"])
+            self.assertEqual(result["result"]["observed"], {"custom": True})
+            verifications = [
+                record
+                for record in read_logs(config.log_dir)
+                if record["kind"] == "verification"
+            ]
+            self.assertEqual(verifications[-1]["expected"], "custom effect")
+            self.assertTrue(verifications[-1]["ok"])
+
+    async def test_model_action_failure_cooldown_blocks_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            data = base_telemetry()
+            line8 = next(
+                line
+                for line in data["nodes"]["smart_panel_01"]["lines"]
+                if int(line["line"]) == 8
+            )
+            line8["state"] = "ON"
+            api = NoEffectAPI(data)
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            command = ModelCommand(
+                tool="control",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test no effect",
+            )
+            first = await agent._execute_model_command(command, force=False, source="test")
+            self.assertFalse(first["ok"])
+            self.assertIn("did not confirm", first["error"])
+            self.assertEqual(len(api.actions), 1)
+
+            second = await agent._execute_model_command(command, force=False, source="test")
+            self.assertTrue(second["blocked"])
+            self.assertIn("retry cooldown", second["error"])
+            self.assertEqual(len(api.actions), 1)
+            blocked = [
+                record
+                for record in read_logs(config.log_dir)
+                if record["kind"] == "action_blocked"
+            ]
+            self.assertTrue(any("retry cooldown" in record["reason"] for record in blocked))
+
+    async def test_rule_and_model_paths_share_pending_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="rule-line-off",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test",
+            )
+            command = ModelCommand(
+                tool="control",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test",
+            )
+            agent._pending_action_keys.add(agent._action_lock_key(action))
+            result = await agent._execute_model_command(command, force=False, source="test")
+            self.assertTrue(result["blocked"])
+            self.assertIn("pending verification", result["error"])
+            self.assertEqual(api.actions, [])
 
     async def test_normal_proposes_then_confirms(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
