@@ -1,8 +1,9 @@
 # Dome autonomous shift agent
 
-One-command autonomous agent for the Dome WebSocket API. Deterministic rules own
-all safety and production decisions; DeepSeek is advisory only and never sends
-commands.
+One-command autonomous agent for the Dome WebSocket API. The LLM proposes or
+executes actions depending on the selected mode; a fail-closed policy gate and
+a hard denylist still protect the dome. There is no shell access: the model can
+only call the limited Dome tool set.
 
 ## Quick start
 
@@ -15,6 +16,8 @@ cp .env.example .env
 python main.py
 ```
 
+The agent is **read-only by default**. To run the normal control mode, set
+`AGENT_ALLOW_CONTROL=1` (or pass `--allow-control`) and `AGENT_MODE=normal`.
 `python -m dome_agent` is equivalent. `dome-agent` is installed by
 `pip install .`.
 
@@ -28,8 +31,26 @@ Required:
 
 Optional:
 
-- `DEEPSEEK_API_KEY` — enables advisory DeepSeek calls. Without it the agent
-  runs rules-only.
+- `DEEPSEEK_API_KEY` — enables the LLM controller. Without it the agent cannot
+  execute LLM commands and reports that the LLM is unavailable.
+- `AGENT_MODE=normal|auto|yolo` — operating mode (default `normal`).
+  - `normal` — the LLM analyzes telemetry/chat and proposes actions; nothing
+    is executed until the operator confirms in Dome chat. The approved
+    protective exceptions (`line_off`, `stop_job`, `turn_off`, `set_fan=ON`,
+    ventilation/fume `turn_on`, `set_mode=FRESH_AIR`) run automatically.
+    Blocked proposals require an explicit force confirmation.
+  - `auto` — deterministic rules only; legacy/fallback mode for tests or when
+    the LLM is intentionally disabled. Still uses `dome_policy.json` and
+    `AGENT_ALLOW_CONTROL`.
+  - `yolo` — **UNSAFE**. The LLM executes its commands immediately; policy,
+    cooldowns and telemetry verification are bypassed. Hard-denied actions
+    remain blocked. Use only on a test dome.
+- `AGENT_ALLOW_CONTROL=1` — master control switch for `normal` and `auto`.
+  Without it those modes only observe and log. `yolo` implies it.
+- `AGENT_YOLO=1` — backward-compatible alias for `AGENT_MODE=yolo`.
+- `AGENT_POLICY_FILE=dome_policy.json` — fail-closed allowlist of node/action
+  pairs and values for `normal`/`auto`. Missing or malformed policy prevents
+  control mode startup.
 - `AGENT_DRY_RUN=1` — analyze and log without sending commands or chat messages.
 - `AGENT_RUN_SECONDS=N` — stop cleanly after N seconds; `0` runs indefinitely.
 - `AGENT_LOG_DIR`, `AGENT_STATE_FILE` — log and restart-state locations.
@@ -39,9 +60,21 @@ Optional:
 
 - Connects, authenticates, and waits as `guest` until the team shift is active.
 - Reconnects after network errors, `session_revoked`, or a closed socket.
-- Reads telemetry and operator chat, applies deterministic rules, then executes
-  validated actions through `DomeAgentAPI.control_device`.
-- Verifies state-changing commands against the next telemetry frame.
+- Reads telemetry and operator chat. In `normal`, the LLM returns a structured
+  proposal; the agent posts it to Dome chat and waits for confirmation.
+- Confirmation phrases: `да`, `подтверждаю`, `выполняй`, `ок`, `давай`;
+  cancellation: `отмена`, `не надо`, `стоп`; force: `да, принудительно` or
+  `force`. A pending proposal expires after 5 minutes.
+- In `normal`/`auto`, every control action passes through `CommandGate` and
+  `dome_policy.json`; dangerous actions such as `block_interlock`,
+  `set_thresholds`, and `unlock_door` are denied.
+- In `yolo`, the LLM commands are executed through `DomeTool` immediately.
+  The hard denylist (`block_interlock`, `block_automation`, `set_thresholds`,
+  `unlock_door`, `remove_part`, `shutdown`, `reboot`) cannot be overridden.
+- `normal`/`auto` use the API verification path; `yolo` sends with
+  `verify=false` and logs `unsafe: true`.
+- The only model tools are `control`, `query`, `telemetry`, `catalog`, and
+  `send_message`. There is no shell/subprocess tool.
 - Persists the current task, chat cursor, cooldowns, and CO2 source override so a
   restart does not duplicate or forget work.
 - Ignores operator chat addressed to another team or agent.
@@ -54,8 +87,10 @@ Optional:
 ## Logs
 
 Each run creates `logs/agent_<run_id>.jsonl` with flushed JSONL records:
-`start`, `connection`, `observation`, `decision`, `action`, `verification`,
-`message`, `llm_call`, `error`, and `stop`. Secrets are redacted before writing.
+`start`, `connection`, `observation`, `decision`, `action`, `action_blocked`,
+`verification`, `message`, `llm_call`, `error`, and `stop`. `decision.source`
+shows `rules` or `llm`; `action.source` shows `yolo`, `confirmed`,
+`confirmed_force`, or `auto`. Secrets are redacted before writing.
 A normal SIGINT/SIGTERM shutdown always writes the final `stop` record.
 
 ## Tests
@@ -72,6 +107,10 @@ verification.
 ## Layout
 
 - `main.py` / `dome_agent/agent.py` — one-command entry point and loop.
+- `dome_policy.json` — fail-closed allowlist for commands.
+- `dome_agent/gate.py` — policy gate and unsafe YOLO bypass.
+- `dome_agent/control.py` — structured LLM decisions, restricted `DomeTool`,
+  hard denylist, and confirmation proposals.
 - `dome_agent/rules.py` — deterministic safety and production rules.
 - `dome_agent/analysis.py` — telemetry normalization, CO2 consensus, alerts.
 - `dome_agent/chat.py` — operator parsing and completion guards.
