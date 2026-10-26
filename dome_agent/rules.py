@@ -241,11 +241,20 @@ class RuleEngine:
     corrective action from being retried on every telemetry frame.
     """
 
-    def __init__(self, state: StateStore | None = None, *, clock=time.time) -> None:
+    def __init__(
+        self,
+        state: StateStore | None = None,
+        *,
+        clock=time.time,
+        yolo: bool = False,
+    ) -> None:
         self.state = state
         self.clock = clock
+        self.yolo = bool(yolo)
 
     def _allowed(self, key: str, cooldown_s: float) -> bool:
+        if self.yolo:
+            return True
         if self.state is None:
             return True
         return self.state.action_allowed(key, cooldown_s, now=self.clock())

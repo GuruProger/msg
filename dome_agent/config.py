@@ -115,6 +115,9 @@ class AgentConfig:
     log_dir: Path = Path("logs")
     state_file: Path = Path("logs/agent_state.json")
     dry_run: bool = False
+    control_enabled: bool = False
+    mode: str = "normal"
+    policy_file: Path = Path("dome_policy.json")
     telemetry_timeout_s: float = 10.0
     observation_interval_s: float = 45.0
     reconnect_delay_s: float = 5.0
@@ -149,8 +152,22 @@ class AgentConfig:
             raise ValueError("AGENT_LLM_MAX_CALLS_PER_HOUR must be >= 1")
         if self.run_seconds < 0:
             raise ValueError("AGENT_RUN_SECONDS must be >= 0")
+        mode = str(self.mode or "").strip().casefold()
+        if mode not in {"normal", "auto", "yolo"}:
+            raise ValueError(
+                f"AGENT_MODE must be normal, auto or yolo, got {self.mode!r}"
+            )
+        object.__setattr__(self, "mode", mode)
+        # YOLO is an explicit opt-in to unsafe control.  It also enables control;
+        # otherwise the mode would be a no-op that still looks dangerous in logs.
+        if self.yolo and not self.control_enabled:
+            object.__setattr__(self, "control_enabled", True)
         object.__setattr__(self, "dome_url", url)
         object.__setattr__(self, "deepseek_base_url", _clean_url(self.deepseek_base_url))
+
+    @property
+    def yolo(self) -> bool:
+        return self.mode == "yolo"
 
     @property
     def llm_available(self) -> bool:
@@ -249,6 +266,30 @@ class AgentConfig:
                 "dry_run": bool(
                     overrides.get("dry_run", _bool_env("AGENT_DRY_RUN", False))
                 ),
+                "control_enabled": bool(
+                    overrides.get(
+                        "control_enabled",
+                        _bool_env("AGENT_ALLOW_CONTROL", False),
+                    )
+                ),
+                "mode": str(
+                    overrides.get(
+                        "mode",
+                        _env(
+                            "AGENT_MODE",
+                            "yolo" if _bool_env("AGENT_YOLO", False) else "normal",
+                        )
+                        or ("yolo" if _bool_env("AGENT_YOLO", False) else "normal"),
+                    )
+                )
+                .strip()
+                .casefold(),
+                "policy_file": Path(
+                    overrides.get(
+                        "policy_file",
+                        _path_env("AGENT_POLICY_FILE", Path("dome_policy.json")),
+                    )
+                ).expanduser(),
                 "telemetry_timeout_s": float(
                     overrides.get(
                         "telemetry_timeout_s",
@@ -302,6 +343,10 @@ class AgentConfig:
             "deepseek_model": self.deepseek_model,
             "llm_enabled": self.llm_available,
             "dry_run": self.dry_run,
+            "control_enabled": self.control_enabled,
+            "mode": self.mode,
+            "yolo": self.yolo,
+            "policy_file": str(self.policy_file),
             "log_dir": str(self.log_dir),
             "state_file": str(self.state_file),
             "telemetry_timeout_s": self.telemetry_timeout_s,
