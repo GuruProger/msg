@@ -347,6 +347,7 @@ class DomeTool:
                     "command": command.as_dict(),
                 }
             try:
+                allow_without_before = is_auto_protective(command)
                 if command.value is NO_VALUE:
                     result = await self.api.control_device(
                         command.node_id,
@@ -354,6 +355,7 @@ class DomeTool:
                         dry_run=dry_run,
                         force=force,
                         verify=verify,
+                        allow_without_before=allow_without_before,
                     )
                 else:
                     result = await self.api.control_device(
@@ -363,6 +365,7 @@ class DomeTool:
                         dry_run=dry_run,
                         force=force,
                         verify=verify,
+                        allow_without_before=allow_without_before,
                     )
             except Exception as exc:
                 return {
@@ -383,8 +386,9 @@ class DomeTool:
             )
             return {
                 "ok": success,
-                "blocked": False,
+                "blocked": bool(result.get("blocked")),
                 "forceable": False,
+                "error": result.get("error") or response_error,
                 "command": command.as_dict(),
                 "result": {
                     "success": success,
@@ -392,6 +396,8 @@ class DomeTool:
                     "error": result.get("error") or response_error,
                     "dry_run": bool(result.get("dry_run")),
                     "verify_error": result.get("verify_error"),
+                    "unknown": bool(result.get("unknown")),
+                    "before_error": result.get("before_error"),
                     "after": result.get("after"),
                     "diff": result.get("diff"),
                 },

@@ -4,7 +4,7 @@ import unittest
 from typing import Any
 
 from dome_control.agent_api import DomeAgentAPI, tool_specs
-from dome_control.client import MISSING
+from dome_control.client import MISSING, DomeTimeout
 from dome_control.domain import DomeValidationError
 
 
@@ -110,6 +110,25 @@ class FakeClient:
         return None
 
 
+class BeforeUnavailableClient(FakeClient):
+    """Fresh before-telemetry is unavailable; after frames still work."""
+
+    async def wait_for_telemetry(
+        self,
+        timeout: float = 10.0,
+        *,
+        next_frame: bool = False,
+        max_age: float | None = None,
+    ) -> dict[str, Any]:
+        if not next_frame:
+            raise DomeTimeout("no fresh before frame")
+        return await super().wait_for_telemetry(
+            timeout,
+            next_frame=next_frame,
+            max_age=max_age,
+        )
+
+
 class AgentAPITests(unittest.IsolatedAsyncioTestCase):
     def make_api(self) -> tuple[DomeAgentAPI, FakeClient]:
         client = FakeClient()
@@ -158,6 +177,32 @@ class AgentAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["before"]["lines"][0]["state"], "OFF")
         self.assertEqual(result["after"]["lines"][0]["state"], "ON")
         self.assertIn("lines", result["diff"])
+        self.assertFalse(result["unknown"])
+
+    async def test_missing_before_blocks_non_emergency_control(self) -> None:
+        client = BeforeUnavailableClient()
+        api = DomeAgentAPI(client=client)
+        result = await api.control_device("smart_panel_01", "line_on", 3)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["blocked"])
+        self.assertFalse(result["sent"])
+        self.assertIn("before-telemetry", result["error"])
+        self.assertEqual(client.control_calls, [])
+
+    async def test_missing_before_allows_emergency_as_unknown(self) -> None:
+        client = BeforeUnavailableClient()
+        api = DomeAgentAPI(client=client)
+        result = await api.control_device(
+            "smart_panel_01",
+            "line_off",
+            3,
+            allow_without_before=True,
+        )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["sent"])
+        self.assertTrue(result["unknown"])
+        self.assertIsNone(result["diff"])
+        self.assertEqual(client.control_calls, [("smart_panel_01", "line_off", 3)])
 
     async def test_operator_action_is_rejected(self) -> None:
         api, client = self.make_api()

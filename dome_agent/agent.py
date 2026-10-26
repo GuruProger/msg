@@ -742,6 +742,7 @@ class DomeAgent:
             return
 
         verify = action.verify and not self.config.yolo
+        allow_without_before = is_auto_protective(action)
         started = time.perf_counter()
         try:
             if action.value is NO_VALUE:
@@ -751,6 +752,7 @@ class DomeAgent:
                     dry_run=self.config.dry_run,
                     verify=verify,
                     max_age=TELEMETRY_MAX_AGE_S,
+                    allow_without_before=allow_without_before,
                 )
             else:
                 result = await self.api.control_device(
@@ -760,7 +762,23 @@ class DomeAgent:
                     dry_run=self.config.dry_run,
                     verify=verify,
                     max_age=TELEMETRY_MAX_AGE_S,
+                    allow_without_before=allow_without_before,
                 )
+            if result.get("blocked"):
+                block_key = f"before:{action.key}"
+                if block_key not in self._blocked_seen:
+                    self._blocked_seen.add(block_key)
+                    self.stats["actions_blocked"] += 1
+                    self.log.write(
+                        "action_blocked",
+                        request=request,
+                        reason=result.get("error") or "fresh before-telemetry unavailable",
+                        unsafe=decision.unsafe,
+                        ref=decision_ref,
+                        expect=expect.description,
+                        source="before_telemetry",
+                    )
+                return
             success = bool(
                 result.get("success")
                 or result.get("accepted")
@@ -776,6 +794,8 @@ class DomeAgent:
                 "error": result.get("error") or response_error,
                 "dry_run": bool(result.get("dry_run")),
                 "verify_error": result.get("verify_error"),
+                "unknown": bool(result.get("unknown")),
+                "before_error": result.get("before_error"),
             }
             action_ref = self.log.write(
                 "action",
@@ -808,6 +828,7 @@ class DomeAgent:
                     error=verification_error,
                     waited_s=waited_s,
                     no_effect=not verified,
+                    unknown=bool(result.get("unknown")),
                 )
             if not success or not verified:
                 self.stats["action_failures"] += 1

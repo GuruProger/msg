@@ -362,6 +362,7 @@ class DomeAgentAPI:
         force: bool = False,
         verify: bool = True,
         max_age: float = 5.0,
+        allow_without_before: bool = False,
     ) -> dict[str, Any]:
         catalog = await self.catalog()
         node = find_node(catalog, node_id)
@@ -393,6 +394,27 @@ class DomeAgentAPI:
         else:
             found = telemetry_node(before_data, resolved_id)
             before = found[1] if found else None
+            if before is None:
+                before_error = f"node {resolved_id!r} absent from fresh telemetry"
+
+        if before is None and not allow_without_before:
+            return {
+                "success": False,
+                "accepted": False,
+                "blocked": True,
+                "unknown": False,
+                "sent": False,
+                "error": f"fresh before-telemetry unavailable: {before_error}",
+                "node_id": resolved_id,
+                "action": resolved_action,
+                "request": payload,
+                "response": None,
+                "before": None,
+                "after": None,
+                "diff": None,
+                "before_error": before_error,
+                "verify_error": None,
+            }
 
         response = await self.client.control(resolved_id, resolved_action, value)
         success = bool(response.get("success"))
@@ -416,6 +438,9 @@ class DomeAgentAPI:
         return {
             "success": success,
             "accepted": success,
+            "blocked": False,
+            "unknown": before is None,
+            "sent": True,
             "node_id": resolved_id,
             "action": resolved_action,
             "request": payload,

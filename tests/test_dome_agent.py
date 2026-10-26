@@ -898,6 +898,51 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
                 timeout=3.0,
             )
 
+    async def test_before_telemetry_policy_blocks_normal_but_not_emergency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            data = base_telemetry()
+            line8 = next(
+                line
+                for line in data["nodes"]["smart_panel_01"]["lines"]
+                if int(line["line"]) == 8
+            )
+            line8["state"] = "ON"
+            api = BeforeAwareAPI(data)
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+
+            normal = ActionSpec(
+                key="normal-before-required",
+                node_id="dome_automation_01",
+                action="set_primary_sensor",
+                value="climate_sensor_02",
+                reason="requires before evidence",
+            )
+            await agent._execute_action(normal, None)
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            blocked = [
+                record for record in records if record["kind"] == "action_blocked"
+            ]
+            self.assertTrue(blocked)
+            self.assertEqual(blocked[-1]["source"], "before_telemetry")
+
+            emergency = ActionSpec(
+                key="emergency-before-allowed",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="protective action",
+            )
+            await agent._execute_action(emergency, None)
+            self.assertTrue(
+                any(
+                    item["action"] == "line_off" and item["value"] == 8
+                    for item in api.actions
+                )
+            )
+
     async def test_no_effect_blocks_retry_until_cooldown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=False)
