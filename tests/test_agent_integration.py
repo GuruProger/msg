@@ -53,6 +53,8 @@ class AgentIntegrationTests(unittest.TestCase):
                         "AGENT_NAME": "integration-agent",
                         "AGENT_LLM": "0",
                         "AGENT_DRY_RUN": "0",
+                        "AGENT_ALLOW_CONTROL": "1",
+                        "AGENT_MODE": "auto",
                         "AGENT_MIN_SEND_GAP": "0.2",
                     }
                 )

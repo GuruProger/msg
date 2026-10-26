@@ -25,6 +25,14 @@ from dome_agent.chat import (
     parse_operator_task,
 )
 from dome_agent.config import AgentConfig
+from dome_agent.control import (
+    DomeTool,
+    ModelCommand,
+    ModelDecision,
+    is_auto_protective,
+    parse_model_decision,
+)
+from dome_agent.gate import CommandGate, GateError
 from dome_agent.llm import DeepSeekAdvisor, parse_advice
 from dome_agent.logging import AgentLog
 from dome_agent.rules import ActionSpec, RuleEngine
@@ -73,6 +81,9 @@ def make_config(tmp: str, **overrides) -> AgentConfig:
         "observation_interval_s": 5.0,
         "min_send_gap_s": 0.2,
         "run_seconds": 0.6,
+        "control_enabled": True,
+        "mode": "auto",
+        "policy_file": REPO / "dome_policy.json",
     }
     values.update(overrides)
     return AgentConfig(**values)
@@ -127,6 +138,7 @@ class FakeAPI:
         value=MISSING,
         *,
         dry_run: bool = False,
+        force: bool = False,
         verify: bool = True,
         max_age: float = 5.0,
     ) -> dict:
@@ -135,6 +147,7 @@ class FakeAPI:
             "action": action,
             "value": None if value is MISSING else value,
             "dry_run": dry_run,
+            "force": force,
             "verify": verify,
         }
         self.actions.append(record)
@@ -455,6 +468,27 @@ class LlmTests(unittest.IsolatedAsyncioTestCase):
             await advisor.close()
             await client.aclose()
 
+    async def test_decide_bad_json_returns_none_and_is_logged(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "not-json"}}]},
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, deepseek_api_key="x", llm_min_interval_s=0.0)
+            log = AgentLog(Path(tmp) / "logs", secrets=config.secrets())
+            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            advisor = DeepSeekAdvisor(config, log, client=client)
+            self.assertIsNone(await advisor.decide({"x": 1}, mode="normal"))
+            log.close()
+            records = read_logs(Path(tmp) / "logs")
+            self.assertEqual(records[-1]["kind"], "llm_call")
+            self.assertFalse(records[-1]["ok"])
+            self.assertIn("valid control JSON", records[-1]["error"])
+            await advisor.close()
+            await client.aclose()
+
     async def test_hourly_budget_blocks_second_call(self) -> None:
         calls = 0
 
@@ -475,6 +509,24 @@ class LlmTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(calls, 1)
             await advisor.close()
             await client.aclose()
+
+
+class FakeAdvisor:
+    """Small deterministic stand-in for DeepSeekAdvisor in mode tests."""
+
+    def __init__(self, decisions: list[ModelDecision | None]) -> None:
+        self.decisions = list(decisions)
+        self.calls: list[dict] = []
+        self.available = True
+
+    async def decide(self, context, *, mode="normal", force=False, purpose="control"):
+        self.calls.append(
+            {"mode": mode, "force": force, "purpose": purpose, "context": context}
+        )
+        return self.decisions.pop(0) if self.decisions else None
+
+    async def close(self) -> None:
+        return None
 
 
 class DelayedLineAPI(FakeAPI):
@@ -581,6 +633,450 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             records = read_logs(config.log_dir)
             self.assertEqual(records[-1]["kind"], "stop")
             self.assertEqual(records[-1]["reason"], "run_seconds")
+
+
+class GateTests(unittest.TestCase):
+    def test_read_only_default_denies(self) -> None:
+        gate = CommandGate(REPO / "dome_policy.json", control_enabled=False)
+        action = ActionSpec(
+            key="line8-on",
+            node_id="smart_panel_01",
+            action="line_on",
+            value=8,
+            reason="test",
+        )
+        decision = gate.check(action)
+        self.assertFalse(decision.allowed)
+        self.assertIn("control disabled", decision.reason)
+
+    def test_policy_allows_known_action_and_rejects_bad_value(self) -> None:
+        gate = CommandGate(REPO / "dome_policy.json", control_enabled=True)
+        allowed = ActionSpec(
+            key="line8-on",
+            node_id="smart_panel_01",
+            action="line_on",
+            value=8,
+            reason="test",
+        )
+        bad_value = ActionSpec(
+            key="line9-on",
+            node_id="smart_panel_01",
+            action="line_on",
+            value=9,
+            reason="test",
+        )
+        self.assertTrue(gate.check(allowed).allowed)
+        self.assertFalse(gate.check(bad_value).allowed)
+
+    def test_policy_rejects_dangerous_action_even_if_node_is_listed(self) -> None:
+        gate = CommandGate(REPO / "dome_policy.json", control_enabled=True)
+        action = ActionSpec(
+            key="unlock",
+            node_id="access_control_01",
+            action="unlock_door",
+            reason="test",
+        )
+        decision = gate.check(action)
+        self.assertFalse(decision.allowed)
+        self.assertIn("denied", decision.reason)
+
+    def test_policy_rejects_unknown_node(self) -> None:
+        gate = CommandGate(REPO / "dome_policy.json", control_enabled=True)
+        action = ActionSpec(
+            key="unknown",
+            node_id="unknown_node",
+            action="turn_on",
+            reason="test",
+        )
+        self.assertFalse(gate.check(action).allowed)
+
+    def test_missing_policy_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(GateError):
+                CommandGate(Path(tmp) / "missing.json", control_enabled=True)
+
+    def test_yolo_bypasses_policy_and_marks_unsafe(self) -> None:
+        gate = CommandGate(
+            Path("/nonexistent/policy.json"),
+            control_enabled=False,
+            yolo=True,
+        )
+        action = ActionSpec(
+            key="unlock",
+            node_id="access_control_01",
+            action="unlock_door",
+            reason="test",
+        )
+        decision = gate.check(action)
+        self.assertTrue(decision.allowed)
+        self.assertTrue(decision.unsafe)
+        self.assertIn("YOLO", decision.reason)
+
+    def test_yolo_config_implies_control_enabled(self) -> None:
+        config = AgentConfig(
+            dome_url="wss://example.test",
+            dome_key="x",
+            mode="yolo",
+            policy_file=REPO / "dome_policy.json",
+        )
+        self.assertTrue(config.control_enabled)
+        self.assertTrue(config.yolo)
+
+    def test_env_flags(self) -> None:
+        env = {
+            "DOME_URL": "wss://example.test",
+            "DOME_KEY": "team-key",
+            "AGENT_ALLOW_CONTROL": "1",
+            "AGENT_YOLO": "0",
+        }
+        with mock.patch.dict(os.environ, env, clear=True):
+            config = AgentConfig.from_env(env_file=None)
+        self.assertTrue(config.control_enabled)
+        self.assertFalse(config.yolo)
+
+    def test_yolo_bypasses_rule_cooldown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            state = StateStore(Path(tmp) / "state.json")
+            state.mark_action("key", success=False, now=100.0)
+            normal = RuleEngine(state, clock=lambda: 101.0)
+            unsafe = RuleEngine(state, clock=lambda: 101.0, yolo=True)
+            self.assertFalse(normal._allowed("key", 9999))
+            self.assertTrue(unsafe._allowed("key", 9999))
+
+
+class ControlTests(unittest.IsolatedAsyncioTestCase):
+    def test_parse_model_decision_drops_hard_denied(self) -> None:
+        decision = parse_model_decision(
+            json.dumps(
+                {
+                    "analysis": "test",
+                    "operator_message": "",
+                    "commands": [
+                        {
+                            "tool": "control",
+                            "node_id": "access_control_01",
+                            "action": "unlock_door",
+                        },
+                        {
+                            "tool": "control",
+                            "node_id": "smart_panel_01",
+                            "action": "line_on",
+                            "value": 8,
+                        },
+                    ],
+                }
+            )
+        )
+        assert decision is not None
+        self.assertEqual(len(decision.commands), 1)
+        self.assertEqual(decision.commands[0].action, "line_on")
+        self.assertTrue(any("hard-denied" in warning for warning in decision.warnings))
+
+    def test_auto_protective_rules(self) -> None:
+        self.assertTrue(
+            is_auto_protective(
+                ModelCommand(tool="control", node_id="anything", action="turn_off")
+            )
+        )
+        self.assertTrue(
+            is_auto_protective(
+                ModelCommand(
+                    tool="control",
+                    node_id="solar_inverter_01",
+                    action="set_fan",
+                    value="ON",
+                )
+            )
+        )
+        self.assertFalse(
+            is_auto_protective(
+                ModelCommand(
+                    tool="control",
+                    node_id="solar_inverter_01",
+                    action="set_fan",
+                    value="OFF",
+                )
+            )
+        )
+        self.assertFalse(
+            is_auto_protective(
+                ModelCommand(
+                    tool="control",
+                    node_id="smart_panel_01",
+                    action="line_on",
+                    value=8,
+                )
+            )
+        )
+
+    async def test_dome_tool_hard_deny_never_calls_api(self) -> None:
+        api = FakeAPI(base_telemetry())
+        tool = DomeTool(api)
+        result = await tool.execute(
+            ModelCommand(
+                tool="control",
+                node_id="access_control_01",
+                action="unlock_door",
+            ),
+            force=True,
+        )
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["blocked"])
+        self.assertFalse(result["forceable"])
+        self.assertEqual(api.actions, [])
+
+
+class GateAgentTests(unittest.IsolatedAsyncioTestCase):
+    async def test_agent_read_only_default_blocks_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, control_enabled=False)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="line8-on",
+                node_id="smart_panel_01",
+                action="line_on",
+                value=8,
+                reason="test gate",
+            )
+            await agent._execute_action(action, None)
+            await agent._execute_action(action, None)
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            blocked = [record for record in records if record["kind"] == "action_blocked"]
+            self.assertEqual(len(blocked), 1)
+            self.assertIn("control disabled", blocked[0]["reason"])
+
+    async def test_yolo_executes_llm_command_without_verification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(
+                tmp,
+                dry_run=False,
+                mode="yolo",
+                control_enabled=False,
+            )
+            api = FakeAPI(base_telemetry())
+            advisor = FakeAdvisor(
+                [
+                    ModelDecision(
+                        analysis="Оператор просит начать печать",
+                        operator_message="Запускаю печать.",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="printer_3d_01",
+                                action="start_job",
+                                value="bracket_v2.gcode",
+                                reason="operator request",
+                            ),
+                        ),
+                        risk="medium",
+                    )
+                ]
+            )
+            agent = DomeAgent(config, api=api, advisor=advisor)
+            self.addAsyncCleanup(agent._shutdown)
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            self.assertTrue(
+                any(
+                    item["action"] == "start_job"
+                    and item["value"] == "bracket_v2.gcode"
+                    and item["verify"] is False
+                    for item in api.actions
+                )
+            )
+            records = read_logs(config.log_dir)
+            actions = [record for record in records if record["kind"] == "action"]
+            self.assertTrue(actions)
+            self.assertTrue(all(record.get("unsafe") is True for record in actions))
+            self.assertTrue(all(record.get("source") == "yolo" for record in actions))
+            self.assertEqual(
+                [record for record in records if record["kind"] == "verification"], []
+            )
+
+    async def test_yolo_hard_deny_is_not_sent_even_with_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="yolo")
+            api = FakeAPI(base_telemetry())
+            advisor = FakeAdvisor(
+                [
+                    ModelDecision(
+                        analysis="trying a forbidden action",
+                        operator_message="",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="access_control_01",
+                                action="unlock_door",
+                                reason="test",
+                            ),
+                        ),
+                    )
+                ]
+            )
+            agent = DomeAgent(config, api=api, advisor=advisor)
+            self.addAsyncCleanup(agent._shutdown)
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            blocked = [record for record in records if record["kind"] == "action_blocked"]
+            self.assertTrue(blocked)
+            self.assertIn("hard-denied", blocked[0]["reason"])
+
+    async def test_normal_proposes_then_confirms(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            api = FakeAPI(base_telemetry())
+            advisor = FakeAdvisor(
+                [
+                    ModelDecision(
+                        analysis="line 8 can be enabled",
+                        operator_message="Предлагаю включить линию 8.",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="smart_panel_01",
+                                action="line_on",
+                                value=8,
+                                reason="operator request",
+                            ),
+                        ),
+                    )
+                ]
+            )
+            agent = DomeAgent(config, api=api, advisor=advisor)
+            self.addAsyncCleanup(agent._shutdown)
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            self.assertEqual(api.actions, [])
+            self.assertIsNotNone(agent._pending)
+            self.assertTrue(any("Подтвердить" in item["text"] for item in api.sent_messages))
+
+            agent._incoming.append(ChatMessage.from_raw(operator_message(20, "да")))
+            await agent._handle_pending()
+            self.assertIsNone(agent._pending)
+            self.assertTrue(
+                any(
+                    item["action"] == "line_on" and item["value"] == 8
+                    for item in api.actions
+                )
+            )
+            records = read_logs(config.log_dir)
+            confirmed = [
+                record
+                for record in records
+                if record["kind"] == "action" and record.get("source") == "confirmed"
+            ]
+            self.assertTrue(confirmed)
+
+    async def test_normal_does_not_replace_pending_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            api = FakeAPI(base_telemetry())
+            advisor = FakeAdvisor(
+                [
+                    ModelDecision(
+                        analysis="first",
+                        operator_message="first proposal",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="smart_panel_01",
+                                action="line_on",
+                                value=8,
+                            ),
+                        ),
+                    ),
+                    ModelDecision(
+                        analysis="second",
+                        operator_message="second proposal",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="smart_panel_01",
+                                action="line_off",
+                                value=7,
+                            ),
+                        ),
+                    ),
+                ]
+            )
+            agent = DomeAgent(config, api=api, advisor=advisor)
+            self.addAsyncCleanup(agent._shutdown)
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            assert agent._pending is not None
+            original = agent._pending.signature
+
+            agent._last_control_at = 0.0
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            assert agent._pending is not None
+            self.assertEqual(agent._pending.signature, original)
+            self.assertTrue(any("ожидающее" in item["text"] for item in api.sent_messages))
+
+    async def test_normal_blocked_proposal_requires_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="normal")
+            api = FakeAPI(base_telemetry())
+            advisor = FakeAdvisor(
+                [
+                    ModelDecision(
+                        analysis="line 9 is outside policy",
+                        operator_message="Предлагаю включить линию 9.",
+                        commands=(
+                            ModelCommand(
+                                tool="control",
+                                node_id="smart_panel_01",
+                                action="line_on",
+                                value=9,
+                                reason="test force",
+                            ),
+                        ),
+                    )
+                ]
+            )
+            agent = DomeAgent(config, api=api, advisor=advisor)
+            self.addAsyncCleanup(agent._shutdown)
+            await agent._cycle()
+            assert agent._control_task is not None
+            await agent._control_task
+            agent._incoming.append(ChatMessage.from_raw(operator_message(21, "да")))
+            await agent._handle_pending()
+            self.assertEqual(api.actions, [])
+            self.assertIsNotNone(agent._pending)
+            assert agent._pending is not None
+            self.assertTrue(agent._pending.awaiting_force)
+            self.assertTrue(any("принудительно" in item["text"] for item in api.sent_messages))
+
+            agent._incoming.append(
+                ChatMessage.from_raw(operator_message(22, "да, принудительно"))
+            )
+            await agent._handle_pending()
+            self.assertIsNone(agent._pending)
+            self.assertTrue(
+                any(
+                    item["action"] == "line_on" and item["value"] == 9
+                    for item in api.actions
+                )
+            )
+            records = read_logs(config.log_dir)
+            forced = [
+                record
+                for record in records
+                if record["kind"] == "action"
+                and record.get("source") == "confirmed_force"
+            ]
+            self.assertTrue(forced)
+            self.assertTrue(forced[0].get("force") is True)
 
 
 if __name__ == "__main__":
