@@ -146,6 +146,7 @@ class DomeAgent:
             config.policy_file,
             control_enabled=config.control_enabled,
             yolo=config.yolo,
+            competition=config.competition,
         )
         self.rules = rules or RuleEngine(self.state, yolo=config.yolo)
         self.advisor = advisor or DeepSeekAdvisor(config, self.log)
@@ -229,6 +230,8 @@ class DomeAgent:
             version=self.config.version,
             models=[self.config.deepseek_model] if self.config.llm_available else [],
             config=self.config.safe_dict(),
+            competition=self.config.competition_profile(),
+            knowledge=self.knowledge.status(),
         )
         if self.state.load_error:
             self.log.write(
@@ -693,6 +696,7 @@ class DomeAgent:
             messages=[message.text for message in decision.messages],
             task=decision.task,
             alerts=snapshot.alerts()[:8],
+            rag_refs=list(getattr(decision, "rag_refs", []) or []),
         )
         self.stats["decisions"] += 1
         self._last_decision_at = time.monotonic()
@@ -1580,6 +1584,21 @@ class DomeAgent:
                     continue
                 if kind == "force":
                     handled_reply = True
+                    if self.config.competition:
+                        self._pending = None
+                        self.log.write(
+                            "action_blocked",
+                            request={"kind": "force"},
+                            reason="force is disabled by the competition profile",
+                            unsafe=True,
+                        )
+                        await self._send_operator_message(
+                            "Принудительное выполнение отключено зачётным профилем. "
+                            "Команда не отправлена.",
+                            dedupe_key=f"force-disabled:{message.id}",
+                            min_interval_s=0,
+                        )
+                        continue
                     await self._execute_pending(force=True)
                     continue
                 if kind == "confirm":
@@ -1593,6 +1612,8 @@ class DomeAgent:
         pending = self._pending
         if pending is None:
             return
+        if force and self.config.competition:
+            force = False
         self.stats["confirmations"] += 1
         results = await self._execute_model_commands(
             pending.commands,
@@ -1604,7 +1625,7 @@ class DomeAgent:
             for command, result in results
             if result.get("blocked") and result.get("forceable")
         ]
-        if blocked and not force:
+        if blocked and not force and not self.config.competition:
             blocked_commands = tuple(command for command, _ in blocked)
             reasons = "; ".join(
                 str(result.get("error") or "policy denied")[:200]
@@ -1986,6 +2007,9 @@ class DomeAgent:
         source: str,
     ) -> dict[str, Any]:
         request = command.as_dict()
+        # In a scored run force is not a bypass: the gate, cooldowns and
+        # verification stay in force even if the operator asks for it.
+        force = bool(force and not self.config.competition)
         unsafe = bool(self.config.yolo or force)
         action: ActionSpec | None = None
         if command.tool == "control":
@@ -2390,6 +2414,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="normal: LLM proposals + confirmation; auto: rules only; yolo: LLM executes immediately",
     )
     parser.add_argument("--yolo", action="store_true", default=None, help="UNSAFE alias for --mode yolo")
+    parser.add_argument("--competition", action="store_true", default=None, help="enable the fail-closed scored-run profile")
     parser.add_argument("--run-seconds", type=float, default=None, help="stop after N seconds (0 means indefinitely)")
     return parser
 
@@ -2413,6 +2438,9 @@ def main(argv: list[str] | None = None) -> int:
         overrides["mode"] = args.mode
     if args.yolo is not None:
         overrides["mode"] = "yolo"
+    if args.competition is not None:
+        overrides["competition"] = True
+        overrides["yolo_requested"] = bool(args.yolo)
     if args.run_seconds is not None:
         overrides["run_seconds"] = args.run_seconds
     try:
@@ -2420,6 +2448,16 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"agent configuration error: {exc}", file=sys.stderr)
         return 2
+    if config.competition:
+        profile = config.competition_profile()
+        print(
+            "competition profile: "
+            f"mode={profile['mode']} control={profile['control_enabled']} "
+            f"model={profile['deepseek_model']} "
+            f"policy_sha256={(profile['policy_sha256'] or 'missing')[:16]} "
+            f"kb={'ready' if profile['kb_available'] else 'missing'}",
+            file=sys.stderr,
+        )
     if config.yolo:
         print(
             "WARNING: YOLO mode enabled: the LLM executes commands immediately; "

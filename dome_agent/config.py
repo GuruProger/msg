@@ -7,6 +7,7 @@ sanitized mapping that is safe to write to the agent log.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass, field
@@ -16,11 +17,56 @@ from urllib.parse import urlsplit
 
 from dome_control.panel import load_dotenv, read_team_key
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.3.0"
 DEFAULT_NAME = "team3-agent"
 DEFAULT_DEEPSEEK_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_KB_DIR = Path(__file__).resolve().parent.parent / "dome_rag"
+
+
+def project_root() -> Path:
+    """Repository root for source runs; package parent for installed tools."""
+    cwd = Path.cwd()
+    if (cwd / "pyproject.toml").is_file() and (cwd / "dome_agent").is_dir():
+        return cwd
+    return Path(__file__).resolve().parent.parent
+
+
+# Зачётный профиль.  Значения намеренно узкие: всё, что не разрешено явно,
+# считается ошибкой конфигурации, а не поводом продолжить работу.
+COMPETITION_DEFAULT_MODEL = "deepseek-v4-flash"
+COMPETITION_MODELS = (COMPETITION_DEFAULT_MODEL,)
+COMPETITION_BASE_URL = DEFAULT_DEEPSEEK_URL
+COMPETITION_DENY_ACTIONS = (
+    "force",
+    "reset_interlock",
+    "reset_protection",
+    "set_data_trust",
+    "set_primary_sensor",
+)
+
+
+def file_sha256(path: str | Path) -> str | None:
+    """SHA-256 файла или ``None``, если файла нет/он не читается."""
+    try:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+    except OSError:
+        return None
+
+
+def _csv_tuple(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
+    if value is None:
+        return default
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [str(item).strip() for item in value]
+    else:
+        items = [part.strip() for part in str(value).split(",")]
+    result = tuple(item for item in items if item)
+    return result or default
 
 _TRUE = {"1", "true", "yes", "on", "y"}
 _FALSE = {"0", "false", "no", "off", "n"}
@@ -132,6 +178,9 @@ class AgentConfig:
     kb_db: Path | None = None
     kb_max_cards: int = 6
     kb_max_chars: int = 6000
+    competition: bool = False
+    competition_models: tuple[str, ...] = COMPETITION_MODELS
+    yolo_requested: bool = field(default=False, repr=False)
     version: str = AGENT_VERSION
 
     def __post_init__(self) -> None:
@@ -172,12 +221,78 @@ class AgentConfig:
                 f"AGENT_MODE must be normal, auto or yolo, got {self.mode!r}"
             )
         object.__setattr__(self, "mode", mode)
+        object.__setattr__(self, "dome_url", url)
+        object.__setattr__(self, "deepseek_base_url", _clean_url(self.deepseek_base_url))
+        models = _csv_tuple(self.competition_models, COMPETITION_MODELS)
+        object.__setattr__(self, "competition_models", models)
         # YOLO is an explicit opt-in to unsafe control.  It also enables control;
         # otherwise the mode would be a no-op that still looks dangerous in logs.
         if self.yolo and not self.control_enabled:
             object.__setattr__(self, "control_enabled", True)
-        object.__setattr__(self, "dome_url", url)
-        object.__setattr__(self, "deepseek_base_url", _clean_url(self.deepseek_base_url))
+        if self.competition:
+            self._validate_competition()
+
+    def _validate_competition(self) -> None:
+        """Fail closed before the agent connects to the dome.
+
+        Competition mode is deliberately strict.  A trainer may still use a
+        mock dome with any model, but the scored run must not start if the
+        configuration could silently fall outside the declaration.
+        """
+        if self.yolo or self.yolo_requested:
+            raise ValueError(
+                "AGENT_COMPETITION=1 forbids yolo/AGENT_YOLO=1 and force mode"
+            )
+        if self.mode not in {"normal", "auto"}:
+            raise ValueError(
+                f"AGENT_COMPETITION=1 requires AGENT_MODE=normal or auto, got {self.mode!r}"
+            )
+        if self.llm_enabled:
+            if self.deepseek_model not in self.competition_models:
+                allowed = ", ".join(self.competition_models)
+                raise ValueError(
+                    "AGENT_COMPETITION=1 forbids DEEPSEEK_MODEL="
+                    f"{self.deepseek_model!r}; allowed: {allowed}. "
+                    "Set AGENT_LLM=0 for a rules-only run."
+                )
+            if self.deepseek_base_url != COMPETITION_BASE_URL:
+                raise ValueError(
+                    "AGENT_COMPETITION=1 allows only DeepSeek at "
+                    f"{COMPETITION_BASE_URL}, got {self.deepseek_base_url!r}"
+                )
+        try:
+            from .gate import load_policy, validate_competition_policy
+
+            policy = load_policy(self.policy_file)
+            errors = validate_competition_policy(policy)
+        except Exception as exc:  # GateError and JSON/OS errors
+            raise ValueError(f"AGENT_COMPETITION=1 policy check failed: {exc}") from exc
+        if errors:
+            raise ValueError(
+                "AGENT_COMPETITION=1 policy is unsafe: " + "; ".join(errors)
+            )
+
+    def competition_profile(self) -> dict[str, Any]:
+        """Sanitized evidence written to the ``start`` log record."""
+        policy_sha = file_sha256(self.policy_file)
+        manifest = self.kb_dir / "corpus_manifest.json"
+        profile: dict[str, Any] = {
+            "enabled": self.competition,
+            "mode": self.mode,
+            "control_enabled": self.control_enabled,
+            "dry_run": self.dry_run,
+            "llm_enabled": self.llm_available,
+            "deepseek_model": self.deepseek_model,
+            "allowed_models": list(self.competition_models),
+            "deepseek_base_url": self.deepseek_base_url,
+            "policy_file": str(self.policy_file),
+            "policy_sha256": policy_sha,
+            "denied_actions": list(COMPETITION_DENY_ACTIONS),
+            "kb_manifest": str(manifest),
+            "kb_manifest_sha256": file_sha256(manifest),
+            "kb_available": (self.kb_dir / "build" / "kb.sqlite").is_file(),
+        }
+        return profile
 
     @property
     def yolo(self) -> bool:
@@ -237,6 +352,24 @@ class AgentConfig:
                 _env("AGENT_KB_DB") or (kb_dir / "build" / "kb.sqlite"),
             )
         ).expanduser()
+        yolo_env = _bool_env("AGENT_YOLO", False)
+        competition = bool(
+            overrides.get("competition", _bool_env("AGENT_COMPETITION", False))
+        )
+        yolo_requested = bool(
+            overrides.get(
+                "yolo_requested",
+                yolo_env
+                or str(overrides.get("mode", "")).strip().casefold() == "yolo",
+            )
+        )
+        competition_models = _csv_tuple(
+            overrides.get(
+                "competition_models",
+                _env("AGENT_COMPETITION_MODELS", ",".join(COMPETITION_MODELS)),
+            ),
+            COMPETITION_MODELS,
+        )
 
         values.update(
             {
@@ -300,9 +433,9 @@ class AgentConfig:
                         "mode",
                         _env(
                             "AGENT_MODE",
-                            "yolo" if _bool_env("AGENT_YOLO", False) else "normal",
+                            "yolo" if yolo_env else "normal",
                         )
-                        or ("yolo" if _bool_env("AGENT_YOLO", False) else "normal"),
+                        or ("yolo" if yolo_env else "normal"),
                     )
                 )
                 .strip()
@@ -368,6 +501,9 @@ class AgentConfig:
                         _int_env("AGENT_KB_MAX_CHARS", 6000, 800),
                     )
                 ),
+                "competition": competition,
+                "competition_models": competition_models,
+                "yolo_requested": yolo_requested,
                 "version": str(overrides.get("version", AGENT_VERSION)),
             }
         )
@@ -400,6 +536,8 @@ class AgentConfig:
             "kb_db": str(self.kb_db),
             "kb_max_cards": self.kb_max_cards,
             "kb_max_chars": self.kb_max_chars,
+            "competition": self.competition,
+            "competition_models": list(self.competition_models),
         }
 
     def secrets(self) -> tuple[str, ...]:

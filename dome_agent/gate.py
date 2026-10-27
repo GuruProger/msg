@@ -22,11 +22,79 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from dome_agent.rules import ActionSpec
+from .config import COMPETITION_DENY_ACTIONS, file_sha256
+from .rules import ActionSpec
 
 
 class GateError(RuntimeError):
     """Raised when the policy cannot be loaded or is malformed."""
+
+
+def load_policy(path: str | Path) -> dict[str, Any]:
+    """Load and structurally validate a policy file."""
+    policy_file = Path(path)
+    if not policy_file.exists():
+        raise GateError(f"policy file not found: {policy_file}")
+    try:
+        data = json.loads(policy_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise GateError(f"cannot read policy {policy_file}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise GateError(f"policy {policy_file} must contain a JSON object")
+    if data.get("default", "deny") != "deny":
+        raise GateError("policy.default must be 'deny'")
+    if not isinstance(data.get("allow"), Mapping):
+        raise GateError("policy.allow must be an object")
+    return data
+
+
+def policy_digest(path: str | Path) -> str | None:
+    """SHA-256 of the exact policy bytes, for the start log."""
+    return file_sha256(path)
+
+
+def _allowed_pairs(policy: Mapping[str, Any]) -> set[tuple[str, str]]:
+    pairs: set[tuple[str, str]] = set()
+    allow = policy.get("allow")
+    if not isinstance(allow, Mapping):
+        return pairs
+    for node_id, rule in allow.items():
+        if isinstance(rule, Mapping):
+            actions = rule.get("actions", [])
+        else:
+            actions = rule
+        if isinstance(actions, (str, bytes)) or not isinstance(actions, (list, tuple, set)):
+            continue
+        for action in actions:
+            pairs.add((str(node_id), str(action)))
+    return pairs
+
+
+def validate_competition_policy(policy: Mapping[str, Any]) -> list[str]:
+    """Return reasons why ``policy`` is not acceptable for a scored run."""
+    errors: list[str] = []
+    if policy.get("default", "deny") != "deny":
+        errors.append("policy.default must be 'deny'")
+    allow = policy.get("allow")
+    if not isinstance(allow, Mapping):
+        errors.append("policy.allow must be an object")
+        allow = {}
+
+    denied = {str(value) for value in policy.get("deny_actions", [])}
+    required = set(COMPETITION_DENY_ACTIONS)
+    missing = sorted(required - denied)
+    if missing:
+        errors.append(
+            "policy.deny_actions must list: " + ", ".join(missing)
+        )
+
+    allowed_actions = {action for _, action in _allowed_pairs(policy)}
+    forbidden = sorted(allowed_actions & required)
+    if forbidden:
+        errors.append(
+            "policy must not allow hazardous actions: " + ", ".join(forbidden)
+        )
+    return errors
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +113,21 @@ class CommandGate:
         *,
         control_enabled: bool = False,
         yolo: bool = False,
+        competition: bool = False,
     ) -> None:
         self.policy_file = Path(policy_file)
         self.control_enabled = bool(control_enabled)
         self.yolo = bool(yolo)
+        self.competition = bool(competition)
         self._policy: dict[str, Any] = {}
-        if self.control_enabled and not self.yolo:
+        if self.competition or (self.control_enabled and not self.yolo):
             self._policy = self._load_policy()
+        if self.competition and self.yolo:
+            raise GateError("competition mode forbids YOLO")
+        if self.competition:
+            errors = validate_competition_policy(self._policy)
+            if errors:
+                raise GateError("unsafe competition policy: " + "; ".join(errors))
 
     def check(self, action: ActionSpec, *, dry_run: bool = False) -> GateDecision:
         """Return whether ``action`` may be executed."""
@@ -59,6 +135,11 @@ class CommandGate:
             return GateDecision(True, "dry-run: no command is sent")
         if str(action.action) == "stop_job":
             return GateDecision(False, "action 'stop_job' is not allowed: unsupported by API; use documented pause_job")
+        if self.competition and str(action.action) in COMPETITION_DENY_ACTIONS:
+            return GateDecision(
+                False,
+                f"action {str(action.action)!r} is disabled by the competition profile",
+            )
         if self.yolo:
             return GateDecision(True, "YOLO: policy and cooldowns bypassed", unsafe=True)
         if not self.control_enabled:
@@ -128,16 +209,4 @@ class CommandGate:
         }
 
     def _load_policy(self) -> dict[str, Any]:
-        if not self.policy_file.exists():
-            raise GateError(f"policy file not found: {self.policy_file}")
-        try:
-            data = json.loads(self.policy_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise GateError(f"cannot read policy {self.policy_file}: {exc}") from exc
-        if not isinstance(data, dict):
-            raise GateError(f"policy {self.policy_file} must contain a JSON object")
-        if data.get("default", "deny") != "deny":
-            raise GateError("policy.default must be 'deny'")
-        if not isinstance(data.get("allow"), Mapping):
-            raise GateError("policy.allow must be an object")
-        return data
+        return load_policy(self.policy_file)
