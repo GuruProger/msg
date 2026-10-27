@@ -567,6 +567,26 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_condensate_hold_waits_for_interlock_reset(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["dome_automation_01"]["interlocks"]["IL_CONDENSATE"].update(
+            {"state": "TRIPPED", "reason": "condensate"}
+        )
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CONDENSATE"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+        self.assertTrue(any(message.dedupe_key == "printer_3d_01:IL_CONDENSATE" for message in result.messages))
+
+    def test_condensate_hold_resumes_after_interlock_clear(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CONDENSATE"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertTrue(any(action.action == "resume" for action in result.actions))
+
     def test_missing_climate_values_do_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(

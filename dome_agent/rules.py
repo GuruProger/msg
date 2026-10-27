@@ -646,7 +646,7 @@ class RuleEngine:
             reason = _state(node.get("hold_reason"))
             clear, why = self._hold_cleared(snapshot, reason)
             if not clear:
-                if reason in {"BED_COLLISION", "FILAMENT_RUNOUT", "IL_SMOKE"}:
+                if reason in {"BED_COLLISION", "FILAMENT_RUNOUT", "IL_SMOKE", "IL_CONDENSATE"}:
                     resume_messages.append(OutgoingMessage(
                         f"{node_id}: {reason}. Нужно вмешательство Оператора, автоматический resume запрещён.",
                         f"{node_id}:{reason}",
@@ -931,6 +931,11 @@ class RuleEngine:
                 return False, "данные климата недоступны или неполны; автоматический resume запрещён"
             if _condensate_present(snapshot):
                 return False, "конденсат/влажность ещё выше нормы"
+            state = _interlock_state(snapshot, "IL_CONDENSATE")
+            if not state:
+                return False, "IL_CONDENSATE неизвестен; автоматический resume запрещён"
+            if _interlock_tripped(snapshot, "IL_CONDENSATE"):
+                return False, f"IL_CONDENSATE {state}; нужен сброс Оператором"
             return True, "влажность и точка росы в норме"
         if reason == "IL_SMOKE":
             if not _smoke_data_known(snapshot):
