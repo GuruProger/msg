@@ -108,15 +108,40 @@ class StateStore:
         self.corrupt_path = target
 
     def save(self) -> None:
+        """Atomically persist state and flush it to stable storage.
+
+        A crash between the temp-file write and the rename must not leave a
+        truncated state file.  ``fsync`` is best-effort: unsupported filesystems
+        still get atomic replacement through ``os.replace``.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
         payload = json.dumps(self.data, ensure_ascii=False, indent=2, sort_keys=True)
-        temp.write_text(payload + "\n", encoding="utf-8")
+        with temp.open("w", encoding="utf-8") as handle:
+            handle.write(payload + "\n")
+            handle.flush()
+            try:
+                os.fsync(handle.fileno())
+            except OSError:
+                pass
         try:
             os.chmod(temp, 0o600)
         except OSError:
             pass
         os.replace(temp, self.path)
+        try:
+            dir_fd = os.open(
+                self.path.parent,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+            )
+        except OSError:
+            return
+        try:
+            os.fsync(dir_fd)
+        except OSError:
+            pass
+        finally:
+            os.close(dir_fd)
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.data.get(key, default)
