@@ -438,6 +438,36 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_smoke_message_does_not_claim_a_stop_that_did_not_happen(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["smoke_detector_01"]["smoke_detected"] = True
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertEqual(result.situation, "Обнаружен дым")
+        self.assertTrue(result.messages)
+        text = result.messages[0].text
+        self.assertNotIn("Производство остановлено", text)
+        self.assertIn("заблокированы", text)
+
+    def test_smoke_hold_waits_for_interlock_reset(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["dome_automation_01"]["interlocks"]["IL_SMOKE"].update(
+            {"state": "TRIPPED", "reason": "smoke"}
+        )
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_SMOKE"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+        self.assertTrue(any(message.dedupe_key == "printer_3d_01:IL_SMOKE" for message in result.messages))
+
+    def test_smoke_hold_resumes_after_operator_resets_interlock(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_SMOKE"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertTrue(any(action.action == "resume" for action in result.actions))
+
     def test_cnc_is_blocked_when_fume_airflow_is_low(self) -> None:
         data = base_telemetry()
         data["nodes"]["cnc_01"].update({"state": "IDLE", "homed": True, "progress_pct": 0.0})

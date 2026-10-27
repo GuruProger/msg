@@ -369,7 +369,7 @@ class RuleEngine:
                 confidence=0.99,
                 evidence=[{"node": "smoke_detector", "param": "smoke_detected", "value": True}],
                 plan=["не запускать и не возобновлять производство", "сообщить Оператору"],
-                messages=[OutgoingMessage("Дым в куполе. Производство остановлено, нужна проверка.", "smoke", min_interval_s=120)],
+                messages=[OutgoingMessage("Дым в куполе. Новые запуски и автоматическое возобновление заблокированы; нужна проверка Оператора.", "smoke", min_interval_s=120)],
             )
 
         # False CO2 alarm: mark the outlier unreliable, switch primary sensor,
@@ -543,7 +543,7 @@ class RuleEngine:
             reason = _state(node.get("hold_reason"))
             clear, why = self._hold_cleared(snapshot, reason)
             if not clear:
-                if reason in {"BED_COLLISION", "FILAMENT_RUNOUT"}:
+                if reason in {"BED_COLLISION", "FILAMENT_RUNOUT", "IL_SMOKE"}:
                     resume_messages.append(OutgoingMessage(
                         f"{node_id}: {reason}. Нужно вмешательство Оператора, автоматический resume запрещён.",
                         f"{node_id}:{reason}",
@@ -788,10 +788,15 @@ class RuleEngine:
         if reason == "IL_SMOKE":
             if _powder_present(snapshot):
                 return False, "дым ещё обнаружен"
+            state = _interlock_state(snapshot, "IL_SMOKE")
+            if not state:
+                return False, "IL_SMOKE неизвестен; автоматический resume запрещён"
+            if _interlock_tripped(snapshot, "IL_SMOKE"):
+                return False, f"IL_SMOKE {state}; нужен сброс Оператором"
             fire = snapshot.node("fire_suppression_01")
             if as_bool(fire.get("alarm")) or _state(fire.get("state")) not in {"READY", ""}:
                 return False, "пожарная автоматика не готова"
-            return True, "дым не обнаружен"
+            return True, "дым не обнаружен, IL_SMOKE сброшен"
         if reason == "IL_VOC_BOX":
             air = snapshot.node("air_quality_sensor_01")
             voc = as_float(air.get("voc_index"))
