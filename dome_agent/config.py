@@ -13,9 +13,10 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlsplit
 
 from dome_control.panel import load_dotenv, read_team_key
+
+from .runtime import normalize_dome_url, normalize_mode, read_runtime, runtime_file_for
 
 AGENT_VERSION = "0.3.0"
 DEFAULT_NAME = "team3-agent"
@@ -161,6 +162,7 @@ class AgentConfig:
     llm_max_calls_per_hour: int = 60
     log_dir: Path = Path("logs")
     state_file: Path = Path("logs/agent_state.json")
+    runtime_file: Path = Path("logs/agent_runtime.json")
     dry_run: bool = False
     control_enabled: bool = False
     mode: str = "normal"
@@ -186,12 +188,8 @@ class AgentConfig:
     def __post_init__(self) -> None:
         object.__setattr__(self, "kb_dir", Path(self.kb_dir).expanduser())
         object.__setattr__(self, "kb_db", Path(self.kb_db).expanduser() if self.kb_db else self.kb_dir / "build/kb.sqlite")
-        url = _clean_url(self.dome_url)
-        parts = urlsplit(url)
-        if parts.scheme.casefold() not in {"ws", "wss"} or not parts.netloc:
-            raise ValueError(
-                f"DOME_URL must be ws://host:port or wss://host, got {self.dome_url!r}"
-            )
+        object.__setattr__(self, "runtime_file", Path(self.runtime_file).expanduser())
+        url = normalize_dome_url(self.dome_url)
         if not self.dome_key.strip():
             raise ValueError("DOME_KEY is empty; set DOME_KEY or DOME_KEY_FILE")
         if not self.agent_name.strip():
@@ -215,11 +213,7 @@ class AgentConfig:
             raise ValueError("AGENT_KB_MAX_CARDS must be >= 1")
         if self.kb_max_chars < 800:
             raise ValueError("AGENT_KB_MAX_CHARS must be >= 800")
-        mode = str(self.mode or "").strip().casefold()
-        if mode not in {"normal", "auto", "yolo"}:
-            raise ValueError(
-                f"AGENT_MODE must be normal, auto or yolo, got {self.mode!r}"
-            )
+        mode = normalize_mode(self.mode)
         object.__setattr__(self, "mode", mode)
         object.__setattr__(self, "dome_url", url)
         object.__setattr__(self, "deepseek_base_url", _clean_url(self.deepseek_base_url))
@@ -343,6 +337,13 @@ class AgentConfig:
                 _path_env("AGENT_STATE_FILE", log_dir / "agent_state.json"),
             )
         ).expanduser()
+        runtime_file = runtime_file_for(
+            log_dir,
+            overrides.get("runtime_file", _env("AGENT_RUNTIME_FILE")),
+        )
+        runtime_state = read_runtime(runtime_file)
+        if "dome_url" not in overrides and runtime_state is not None and runtime_state.dome_url:
+            url = runtime_state.dome_url
         kb_dir = Path(
             overrides.get("kb_dir", _path_env("AGENT_KB_DIR", DEFAULT_KB_DIR))
         ).expanduser()
@@ -356,11 +357,17 @@ class AgentConfig:
         competition = bool(
             overrides.get("competition", _bool_env("AGENT_COMPETITION", False))
         )
+        mode_value = overrides.get(
+            "mode",
+            _env("AGENT_MODE", "yolo" if yolo_env else "normal")
+            or ("yolo" if yolo_env else "normal"),
+        )
+        if "mode" not in overrides and runtime_state is not None and runtime_state.mode:
+            mode_value = runtime_state.mode
         yolo_requested = bool(
             overrides.get(
                 "yolo_requested",
-                yolo_env
-                or str(overrides.get("mode", "")).strip().casefold() == "yolo",
+                yolo_env or str(mode_value).strip().casefold() == "yolo",
             )
         )
         competition_models = _csv_tuple(
@@ -419,6 +426,7 @@ class AgentConfig:
                 ),
                 "log_dir": log_dir,
                 "state_file": state_file,
+                "runtime_file": runtime_file,
                 "dry_run": bool(
                     overrides.get("dry_run", _bool_env("AGENT_DRY_RUN", False))
                 ),
@@ -428,18 +436,7 @@ class AgentConfig:
                         _bool_env("AGENT_ALLOW_CONTROL", False),
                     )
                 ),
-                "mode": str(
-                    overrides.get(
-                        "mode",
-                        _env(
-                            "AGENT_MODE",
-                            "yolo" if yolo_env else "normal",
-                        )
-                        or ("yolo" if yolo_env else "normal"),
-                    )
-                )
-                .strip()
-                .casefold(),
+                "mode": str(mode_value).strip().casefold(),
                 "policy_file": Path(
                     overrides.get(
                         "policy_file",
@@ -525,6 +522,7 @@ class AgentConfig:
             "policy_file": str(self.policy_file),
             "log_dir": str(self.log_dir),
             "state_file": str(self.state_file),
+            "runtime_file": str(self.runtime_file),
             "telemetry_timeout_s": self.telemetry_timeout_s,
             "observation_interval_s": self.observation_interval_s,
             "reconnect_delay_s": self.reconnect_delay_s,

@@ -4,7 +4,6 @@ import asyncio
 from contextlib import asynccontextmanager
 import importlib
 import json
-import os
 from pathlib import Path
 import secrets
 import sys
@@ -23,13 +22,13 @@ def create_frontend(backend_root: Path | None = None):
     from .journal_api import create_app
     from .service import DashboardService, WebError
     root=Path(__file__).parent/'static'
-    log_dir=Path(os.getenv('AGENT_LOG_DIR') or backend_root/'logs')
-    state_file=Path(os.getenv('AGENT_STATE_FILE') or log_dir/'agent_state.json')
-    app=create_app(log_dir=log_dir,state_file=state_file)
-    endpoints={r.path:r.endpoint for r in app.routes if hasattr(r,'endpoint')}
     service=DashboardService(backend_root,env_file='.env')
     service.csrf=secrets.token_urlsafe(32)
     service.connection='journal'
+    log_dir=service.log_dir
+    state_file=service.state_file
+    app=create_app(log_dir=log_dir,state_file=state_file)
+    endpoints={r.path:r.endpoint for r in app.routes if hasattr(r,'endpoint')}
     original_search=service.search
     # Prepared records are also usable when no chunks/index are shipped.
     if not any((backend_root/'dome_rag/chunks').glob('*.jsonl')):
@@ -65,7 +64,7 @@ def create_frontend(backend_root: Path | None = None):
 
     @app.get('/api/frontend')
     async def frontend_info():
-        return service.redact({'csrf':service.csrf,'model':service.settings['model'],'base_url':service.settings['base_url'],'llm_enabled':service.settings['llm_enabled'],'api_key_saved':bool(service.settings['api_key']),'messages':list(service.conversation.messages),'busy':service.conversation.busy,'knowledge':service.knowledge.status(),'backend_root':str(backend_root),'log_dir':str(log_dir),'state_file':str(state_file)})
+        return service.redact({'csrf':service.csrf,'model':service.settings['model'],'base_url':service.settings['base_url'],'llm_enabled':service.settings['llm_enabled'],'api_key_saved':bool(service.settings['api_key']),'messages':list(service.conversation.messages),'busy':service.conversation.busy,'knowledge':service.knowledge.status(),'runtime':service.runtime_snapshot(),'backend_root':str(backend_root),'log_dir':str(log_dir),'state_file':str(state_file)})
 
     async def authorized(request):
         host=request.headers.get('host','')
@@ -86,6 +85,9 @@ def create_frontend(backend_root: Path | None = None):
                 absorb(await snapshot(data.get('demo') is True))
                 return await service.conversation.ask(data.get('text',''))
             if action=='knowledge':return await asyncio.to_thread(original_search,str(data.get('query','')))
+            if action=='agent-runtime':
+                if service.conversation.busy:raise WebError('Дождитесь ответа агента',409)
+                return service.apply_runtime(data)
             if action=='settings':
                 if service.conversation.busy:raise WebError('Дождитесь ответа агента',409)
                 for key in ['model','base_url']:

@@ -22,6 +22,15 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .panel_log import PanelLog
+from dome_agent.runtime import (
+    RuntimeConfigError,
+    normalize_dome_url,
+    normalize_mode,
+    read_runtime,
+    read_status,
+    status_path,
+    write_runtime,
+)
 
 STATIC = Path(__file__).parent / "static"
 HARD_DENY = {"block_automation", "block_interlock", "set_thresholds", "unlock_door", "remove_part", "shutdown", "reboot"}
@@ -101,7 +110,14 @@ class DashboardService:
         }
         policy_file = Path(values.get("AGENT_POLICY_FILE", "dome_policy.json"))
         self.policy_path = policy_file if policy_file.is_absolute() else self.root / policy_file
-        self.log_dir = self.root / "logs"
+        log_dir = Path(values.get("AGENT_LOG_DIR") or "logs").expanduser()
+        self.log_dir = log_dir if log_dir.is_absolute() else self.root / log_dir
+        state_file = Path(values.get("AGENT_STATE_FILE") or self.log_dir / "agent_state.json").expanduser()
+        self.state_file = state_file if state_file.is_absolute() else self.root / state_file
+        runtime_file = Path(values.get("AGENT_RUNTIME_FILE") or self.log_dir / "agent_runtime.json").expanduser()
+        self.runtime_file = runtime_file if runtime_file.is_absolute() else self.root / runtime_file
+        self.runtime_status_file = status_path(self.runtime_file)
+        self.competition = truth("AGENT_COMPETITION")
         self.panel_log = PanelLog(self.log_dir, redact=self.redact)
         if demo:
             data = json.loads((STATIC / "demo.json").read_text(encoding="utf-8"))
@@ -201,6 +217,7 @@ class DashboardService:
             deepseek_model=s["model"], mode=s["mode"], dry_run=s["dry_run"],
             control_enabled=s["control_enabled"], llm_enabled=s["llm_enabled"],
             policy_file=self.policy_path, log_dir=self.log_dir, state_file=self.log_dir / "agent_state.json",
+            runtime_file=self.runtime_file,
         )
         # Validate the exact policy before any connection/agent launch.
         self.gate_class(config.policy_file, control_enabled=config.control_enabled, yolo=config.yolo)
@@ -357,13 +374,149 @@ class DashboardService:
         for k, n in self.telemetry.get("nodes", {}).items():
             updated_age = time.monotonic() - self._readings_at.get(k, (None, time.monotonic()))[1]
             quality[k] = {"unchanged_for_s": round(updated_age, 1), "stale": bool((age is not None and age > 10) or updated_age > 15 or n.get("status") == "UNKNOWN"), "reading_delay_s": n.get("reading_delay_s")}
-        return self.redact({"csrf": self.csrf, "demo": self.demo, "connection": {"status": self.connection, "role": role, "team": 3 if self.demo else getattr(getattr(self.api, "client", None), "team", None), "age_s": age, "error": self.last_error}, "settings": settings, "catalog": self.catalog, "telemetry": self.telemetry, "quality": quality, "alerts": self._alerts(), "messages": list(self.messages), "events": events, "history": list(self.history), "agent_chat": list(self.conversation.messages), "agent_chat_busy": self.conversation.busy, "agent": {"running": running, "mode": self.settings["mode"], "stats": self._demo_stats if self.demo else (self.agent.stats if self.agent else {}), "task": task, "pending": pending}, "policy": self._policy(), "server_time": iso()})
+        return self.redact({"csrf": self.csrf, "demo": self.demo, "connection": {"status": self.connection, "role": role, "team": 3 if self.demo else getattr(getattr(self.api, "client", None), "team", None), "age_s": age, "error": self.last_error}, "settings": settings, "runtime": self.runtime_snapshot(), "catalog": self.catalog, "telemetry": self.telemetry, "quality": quality, "alerts": self._alerts(), "messages": list(self.messages), "events": events, "history": list(self.history), "agent_chat": list(self.conversation.messages), "agent_chat_busy": self.conversation.busy, "agent": {"running": running, "mode": self.settings["mode"], "stats": self._demo_stats if self.demo else (self.agent.stats if self.agent else {}), "task": task, "pending": pending}, "policy": self._policy(), "server_time": iso()})
 
-    async def dispatch(self, action: str, data: dict):
-        # LLM waits must not hold the equipment/settings lock or delay Stop.
+    @staticmethod
+    def _status_age_s(status: dict | None) -> float | None:
+        if not status:
+            return None
+        text = status.get("updated_at")
+        if not isinstance(text, str) or not text.strip():
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        now = datetime.now(parsed.tzinfo) if parsed.tzinfo else datetime.now()
+        return max(0.0, (now - parsed).total_seconds())
+
+    def runtime_snapshot(self) -> dict:
+        """Validated overrides plus the agent's own heartbeat.
+
+        The panel never infers a live mode from the runtime file alone: the
+        agent confirms what it applied in ``agent_runtime_status.json``.
+        """
+        requested = None
+        error = None
+        try:
+            state = read_runtime(self.runtime_file)
+            requested = state.as_dict() if state is not None else None
+        except (OSError, RuntimeConfigError, ValueError) as exc:
+            error = str(exc)
+        raw_status = read_status(self.runtime_status_file)
+        status = None
+        if raw_status is not None:
+            status = {
+                key: raw_status.get(key)
+                for key in (
+                    "pid",
+                    "run_id",
+                    "running",
+                    "updated_at",
+                    "mode",
+                    "dome_url",
+                    "role",
+                    "team",
+                    "connected",
+                    "competition",
+                    "control_enabled",
+                    "dry_run",
+                )
+            }
+        age = self._status_age_s(status)
+        live = bool(status and status.get("running") and age is not None and age <= 15.0)
+        competition = bool(self.competition or (status or {}).get("competition"))
+        return {
+            "file": str(self.runtime_file),
+            "status_file": str(self.runtime_status_file),
+            "requested": requested,
+            "status": status,
+            "age_s": round(age, 1) if age is not None else None,
+            "live": live,
+            "competition": competition,
+            "error": error,
+        }
+
+    def apply_runtime(self, data: dict) -> dict:
+        """Persist a mode/address override for the running agent.
+
+        The file is the only channel between the panel process and the agent
+        process, so this is an explicit, audited control rather than a silent
+        settings mutation.  A scored run still rejects YOLO in the agent.
+        """
+        mode = data.get("mode")
+        dome_url = data.get("dome_url")
+        if mode is None and dome_url is None:
+            raise WebError("Укажите режим или адрес Купола")
+        snapshot = self.runtime_snapshot()
+        if mode is not None:
+            try:
+                mode = normalize_mode(mode)
+            except RuntimeConfigError as exc:
+                raise WebError(str(exc)) from exc
+            if mode == "yolo":
+                if not data.get("unsafe_ack"):
+                    raise WebError("Режим yolo требует явного подтверждения", 409)
+                if snapshot["competition"]:
+                    raise WebError(
+                        "Зачётный профиль (AGENT_COMPETITION=1) запрещает режим yolo",
+                        403,
+                    )
+        if dome_url is not None:
+            try:
+                dome_url = normalize_dome_url(dome_url)
+            except RuntimeConfigError as exc:
+                raise WebError(str(exc)) from exc
+            effective = (
+                (snapshot.get("status") or {}).get("dome_url")
+                or (snapshot.get("requested") or {}).get("dome_url")
+            )
+            if effective and dome_url != effective and not data.get("ack_url"):
+                raise WebError(
+                    "Смена адреса Купола требует подтверждения: ключ будет "
+                    "отправлен на новый адрес",
+                    409,
+                )
+        state = write_runtime(
+            self.runtime_file,
+            mode=mode,
+            dome_url=dome_url,
+            requested_by="panel",
+            ack_url=bool(data.get("ack_url")),
+        )
+        self.settings["mode"] = state.mode or self.settings.get("mode", "normal")
+        if state.dome_url:
+            self.settings["url"] = state.dome_url
+        try:
+            self.panel_log.write(
+                "runtime_change",
+                mode=state.mode,
+                dome_url=state.dome_url,
+                requested_by="panel",
+                ack_url=bool(data.get("ack_url")),
+            )
+        except Exception as exc:
+            self.event("error", where="panel_log", error=f"{type(exc).__name__}: {exc}"[:300])
+        self.event(
+            "decision",
+            situation="Runtime-настройки агента обновлены",
+            source="panel",
+            mode=state.mode,
+            dome_url=state.dome_url,
+        )
+        message = (
+            "Настройки сохранены. Работающий агент применит их автоматически."
+            if snapshot["live"]
+            else "Настройки сохранены. Агент не найден по heartbeat; они будут применены при следующем запуске."
+        )
+        return {"ok": True, "message": message, "runtime": self.runtime_snapshot()}
+
+    async def dispatch(self, action: str, data: dict):        # LLM waits must not hold the equipment/settings lock or delay Stop.
         if action == "agent/chat":
             return await self.conversation.ask(data.get("text", ""))
         async with self._mutation_lock:
+            if action == "agent/runtime":
+                return self.apply_runtime(data)
             if action == "settings":
                 if self.agent_task and not self.agent_task.done() or self._demo_agent:
                     raise WebError("Остановите агента перед изменением режима или подключения", 409)

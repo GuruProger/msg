@@ -129,6 +129,19 @@ class CommandGate:
             if errors:
                 raise GateError("unsafe competition policy: " + "; ".join(errors))
 
+    def apply_runtime(self, *, yolo: bool, control_enabled: bool) -> None:
+        """Apply a validated runtime mode without rebuilding the gate.
+
+        A live mode change must never turn a scored run into YOLO, and turning
+        YOLO off must load the policy if it was bypassed at construction time.
+        """
+        if self.competition and yolo:
+            raise GateError("competition mode forbids YOLO")
+        self.yolo = bool(yolo)
+        self.control_enabled = bool(control_enabled)
+        if not self.yolo and self.control_enabled and not self._policy:
+            self._policy = self._load_policy()
+
     def check(self, action: ActionSpec, *, dry_run: bool = False) -> GateDecision:
         """Return whether ``action`` may be executed."""
         if dry_run:

@@ -11,12 +11,15 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import os
 import re
 import signal
 import sys
 import time
 import traceback
 from collections import deque
+from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -46,6 +49,13 @@ from .knowledge import KnowledgeService
 from .llm import Advice, DeepSeekAdvisor
 from .logging import AgentLog
 from .rules import NO_VALUE, ActionSpec, OutgoingMessage, RuleEngine, RuleResult
+from .runtime import (
+    RuntimeConfigError,
+    RuntimeState,
+    read_runtime,
+    status_path,
+    write_json_atomic,
+)
 from .state import StateStore
 from .verification import ExpectedEffect, expected_effect, meaningful_diff
 
@@ -88,6 +98,14 @@ def _reply_kind(text: Any, *, awaiting_force: bool = False) -> str | None:
 
 def _digest(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _file_stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
 
 
 def _safe_text(value: Any, limit: int = 500) -> str:
@@ -135,6 +153,7 @@ class DomeAgent:
             secrets=config.secrets(),
         )
         self.state = state or StateStore(config.state_file)
+        self._owns_api = api is None
         self.api = api or DomeAgentAPI(
             config.dome_url,
             config.dome_key,
@@ -164,6 +183,14 @@ class DomeAgent:
         self._role: str | None = None
         self._team: int | None = None
         self._shutdown_done = False
+        self._base_control_enabled = config.control_enabled
+        self._mode_epoch = 0
+        self._runtime_path = Path(config.runtime_file).expanduser()
+        self._runtime_status_path = status_path(self._runtime_path)
+        self._runtime_seen = None
+        self._runtime_pending_url: str | None = None
+        self._status_at = 0.0
+        self._status_error_logged = False
         self._last_chat_poll = 0.0
         self._last_chat_reconcile = 0.0
         self._chat_generation_seen = self._chat_generation()
@@ -233,6 +260,7 @@ class DomeAgent:
             competition=self.config.competition_profile(),
             knowledge=self.knowledge.status(),
         )
+        self._write_runtime_status(running=True)
         if self.state.load_error:
             self.log.write(
                 "error",
@@ -251,6 +279,11 @@ class DomeAgent:
                 if self._past_deadline():
                     self.request_stop("run_seconds")
                     break
+                try:
+                    await self._poll_runtime_overrides()
+                except Exception as exc:  # a bad control file must not stop the shift
+                    self._log_exception("runtime", exc)
+                self._heartbeat_status()
                 if self._role is None:
                     try:
                         await self._connect()
@@ -330,6 +363,7 @@ class DomeAgent:
                 stats=dict(self.stats),
             )
         finally:
+            self._write_runtime_status(running=False)
             try:
                 self.log.close()
             except Exception:
@@ -379,6 +413,175 @@ class DomeAgent:
             await asyncio.wait_for(self._stop.wait(), timeout=seconds)
         except asyncio.TimeoutError:
             pass
+
+    # ------------------------------------------------------------------
+    # runtime overrides (mode and Dome address)
+    # ------------------------------------------------------------------
+
+    def _heartbeat_status(self) -> None:
+        if time.monotonic() - self._status_at < 3.0:
+            return
+        self._status_at = time.monotonic()
+        self._write_runtime_status(running=True)
+
+    def _write_runtime_status(self, *, running: bool) -> None:
+        """Publish the effective settings for the local panel.
+
+        The status file is informational only: it contains no key, no
+        telemetry and is never read back by the agent.
+        """
+        payload = {
+            "pid": os.getpid(),
+            "run_id": self.log.run_id,
+            "running": bool(running),
+            "updated_at": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "mode": self.config.mode,
+            "dome_url": self.config.dome_url,
+            "role": self._role,
+            "team": self._team,
+            "connected": self._role is not None,
+            "competition": self.config.competition,
+            "control_enabled": self.config.control_enabled,
+            "dry_run": self.config.dry_run,
+        }
+        try:
+            write_json_atomic(self._runtime_status_path, payload)
+            self._status_error_logged = False
+        except OSError as exc:
+            if not self._status_error_logged:
+                self._status_error_logged = True
+                self._log_exception("runtime_status", exc)
+
+    async def _poll_runtime_overrides(self) -> None:
+        """Apply mode/address changes written by the panel.
+
+        The file is only read when its timestamp or size changes, so the loop
+        keeps its one-second cadence.  A malformed file is reported and
+        ignored: it must never stop the shift.
+        """
+        stamp = _file_stamp(self._runtime_path)
+        if stamp != self._runtime_seen:
+            self._runtime_seen = stamp
+            try:
+                state = read_runtime(self._runtime_path, strict=True)
+            except (OSError, RuntimeConfigError, ValueError) as exc:
+                self.log.write(
+                    "error",
+                    where="runtime",
+                    error=f"{type(exc).__name__}: {exc}"[:400],
+                )
+                state = None
+            if state is not None:
+                await self._apply_runtime_state(state)
+        await self._apply_pending_url()
+
+    async def _apply_runtime_state(self, state: RuntimeState) -> None:
+        if state.mode and state.mode != self.config.mode:
+            if state.mode == "yolo" and self.config.competition:
+                self.log.write(
+                    "error",
+                    where="runtime",
+                    error="competition mode forbids yolo; runtime mode ignored",
+                    requested_mode="yolo",
+                )
+            else:
+                await self._apply_mode(state.mode)
+        if state.dome_url and state.dome_url != self.config.dome_url:
+            if self._owns_api:
+                self._runtime_pending_url = state.dome_url
+            else:
+                self.log.write(
+                    "error",
+                    where="runtime",
+                    error=(
+                        "runtime DOME_URL change requires a standalone agent: "
+                        "the API connection is shared with the panel"
+                    ),
+                    requested_url=state.dome_url,
+                )
+
+    async def _apply_mode(self, mode: str) -> None:
+        old_mode = self.config.mode
+        if old_mode == mode:
+            return
+        new_config = replace(
+            self.config,
+            mode=mode,
+            # YOLO implies control; leaving YOLO must not silently leave it on.
+            control_enabled=True if mode == "yolo" else self._base_control_enabled,
+        )
+        self.gate.apply_runtime(
+            yolo=new_config.yolo,
+            control_enabled=new_config.control_enabled,
+        )
+        self.config = new_config
+        self.rules.yolo = new_config.yolo
+        self._mode_epoch += 1
+        cleared = self._pending is not None
+        self._pending = None
+        self.log.write(
+            "decision",
+            situation="Режим агента изменён",
+            cause=f"{old_mode} → {mode}",
+            confidence=1,
+            evidence=[],
+            plan=[],
+            source="runtime",
+            mode=mode,
+            previous_mode=old_mode,
+            control_enabled=new_config.control_enabled,
+            pending_cleared=cleared,
+        )
+        self._write_runtime_status(running=True)
+        if cleared and self._role == "team":
+            try:
+                await self._send_operator_message(
+                    f"Режим агента изменён: {old_mode} → {mode}. "
+                    "Ожидающее предложение сброшено.",
+                    dedupe_key=f"mode-change:{mode}:{int(time.time())}",
+                    min_interval_s=0,
+                )
+            except Exception as exc:
+                self._log_exception("runtime_notify", exc)
+
+    async def _apply_pending_url(self) -> None:
+        url = self._runtime_pending_url
+        if not url:
+            return
+        if url == self.config.dome_url:
+            self._runtime_pending_url = None
+            return
+        if not self._owns_api:
+            return
+        if self._control_task is not None and not self._control_task.done():
+            return
+        if any(not task.done() for task in self._action_tasks.values()):
+            return
+        self._runtime_pending_url = None
+        old_url = self.config.dome_url
+        self._mode_epoch += 1
+        self._pending = None
+        self._role = None
+        self._team = None
+        await self._close_api_quietly()
+        self.config = replace(self.config, dome_url=url)
+        self.api = DomeAgentAPI(
+            self.config.dome_url,
+            self.config.dome_key,
+            name=self.config.agent_name,
+            timeout=self.config.telemetry_timeout_s,
+            min_send_gap=self.config.min_send_gap_s,
+        )
+        self.tool.api = self.api
+        self._last_chat_poll = 0.0
+        self.log.write(
+            "connection",
+            event="runtime_url_change",
+            role=None,
+            team=None,
+            details={"from": old_url, "to": url},
+        )
+        self._write_runtime_status(running=True)
 
     # ------------------------------------------------------------------
     # connection
@@ -1743,6 +1946,7 @@ class DomeAgent:
         *,
         force: bool,
     ) -> None:
+        epoch = self._mode_epoch
         try:
             context = await self._control_context(snapshot, decision, messages)
             model_decision = await self.advisor.decide(
@@ -1758,6 +1962,18 @@ class DomeAgent:
                         dedupe_key="llm-no-response",
                         min_interval_s=60,
                     )
+                return
+            if epoch != self._mode_epoch:
+                self.log.write(
+                    "decision",
+                    situation="Ответ модели отброшен: режим или адрес изменён",
+                    cause="runtime change",
+                    confidence=0,
+                    evidence=[],
+                    plan=[],
+                    source="runtime",
+                    mode=self.config.mode,
+                )
                 return
             self._log_model_decision(model_decision)
             if self.config.mode == "yolo":
