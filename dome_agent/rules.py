@@ -19,6 +19,28 @@ from .state import StateStore
 
 NO_VALUE = object()
 
+_PRODUCTION_BLOCKING_ALERTS = frozenset({
+    "MACHINE_ERROR",
+    "MACHINE_ALARM",
+    "MACHINE_HOLD_ALARM",
+    "FIRE",
+    "FIRE_NOT_READY",
+    "SMOKE",
+    "CONDENSATE",
+    "CO2_TRIP",
+    "SEISMIC",
+    "CHEM",
+    "RADIATION",
+    "FUME_ALARM",
+    "SEAL_LEAK",
+    "INVERTER_ERROR",
+    "INVERTER_HEAT",
+    "OVERVOLTAGE",
+    "PANEL_LINE_ALARM",
+    "BATTERY_LOW",
+    "ACCESS",
+})
+
 
 def _state(value: Any) -> str:
     return str(value or "").strip().upper()
@@ -1404,8 +1426,9 @@ class RuleEngine:
         for alert in snapshot.alerts():
             if alert.get("severity") != "critical":
                 continue
-            if alert.get("code") in {"MACHINE_ERROR", "MACHINE_ALARM", "MACHINE_HOLD_ALARM", "FIRE", "FIRE_NOT_READY", "SMOKE", "CONDENSATE", "CO2_TRIP", "SEISMIC", "CHEM"}:
-                return str(alert.get("code")), str(alert.get("message"))
+            code = str(alert.get("code") or "")
+            if code in _PRODUCTION_BLOCKING_ALERTS:
+                return code, str(alert.get("message"))
         return None
 
     def _action_result(

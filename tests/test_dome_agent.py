@@ -606,6 +606,28 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "fire_not_ready")
 
+    def test_start_blocked_by_radiation_alarm(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["radiation_sensor_01"]["dose_rate_usv_h"] = 2.0
+        task = {
+            "message_id": 11,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "RADIATION")
+
+    def test_start_blocked_by_fume_alarm(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["fume_extraction_01"].update({"alarm": True, "alarm_code": "F-12"})
+        task = {
+            "message_id": 12,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "FUME_ALARM")
+
     def test_start_blocked_when_climate_data_unknown(self) -> None:
         data = base_telemetry()
         data["nodes"]["climate_sensor_01"]["humidity_pct"] = None
