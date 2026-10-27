@@ -492,7 +492,7 @@ class RuleEngine:
                 plan=["усилить вентиляцию", "не возобновлять станки до снижения CO2"],
                 actions=actions,
                 messages=[OutgoingMessage(
-                    f"CO2 {snapshot.co2.chosen_ppm:.0f} ppm {confirmation}. Включена вентиляция; станки остаются на паузе.",
+                    f"CO2 {snapshot.co2.chosen_ppm:.0f} ppm {confirmation}. Включаю вентиляцию; станки остаются на паузе.",
                     "co2_real",
                     min_interval_s=300,
                 )],
@@ -674,7 +674,7 @@ class RuleEngine:
                     plan=["отключить линию 8", "сообщить Оператору о необходимости осмотра"],
                     actions=[action],
                     messages=[OutgoingMessage(
-                        f"Линия 8 потребляет {phantom:.0f} Вт без нагрузки. Отключил; проверьте контакт.",
+                        f"Линия 8 потребляет {phantom:.0f} Вт без нагрузки. Отключаю; проверьте контакт.",
                         "line8_phantom",
                     )],
                 )
@@ -955,7 +955,7 @@ class RuleEngine:
                     confidence=0.95,
                     plan=["остановить задачу", "сообщить Оператору"],
                     messages=[OutgoingMessage(
-                        f"{node_id}: ошибка {node.get('error_code') or node.get('alarm_code')}. Задание остановлено.",
+                        f"{node_id}: ошибка {node.get('error_code') or node.get('alarm_code')}. Задание снято с выполнения.",
                         f"{node_id}:error:{task.get('message_id')}",
                         min_interval_s=300,
                     )],

@@ -373,6 +373,21 @@ class RuleTests(unittest.TestCase):
         self.assertTrue(any(action.action == "set_mode" and action.value == "FRESH_AIR" for action in result.actions))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_messages_do_not_claim_unverified_effects(self) -> None:
+        result = RuleEngine().decide(Snapshot(real_co2_telemetry()))
+        self.assertTrue(result.messages)
+        text = result.messages[0].text
+        self.assertIn("Включаю", text)
+        self.assertNotIn("Включена", text)
+
+        data = base_telemetry()
+        line8 = data["nodes"]["smart_panel_01"]["lines"][7]
+        line8["power_w"] = 50.0
+        result = RuleEngine().decide(Snapshot(data))
+        text = result.messages[0].text
+        self.assertIn("Отключаю", text)
+        self.assertNotIn("Отключил", text)
+
     def test_line_alarm_message_does_not_crash(self) -> None:
         data = base_telemetry()
         line3 = data["nodes"]["smart_panel_01"]["lines"][2]
