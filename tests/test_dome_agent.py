@@ -1028,6 +1028,34 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.state.get("pending_actions"), {})
             await api.close()
 
+    async def test_recovered_action_intent_notifies_operator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent.state.begin_action(
+                "line8-off",
+                request={
+                    "type": "control",
+                    "node_id": "smart_panel_01",
+                    "action": "line_off",
+                    "value": 8,
+                },
+                ref=77,
+                expected="smart_panel_01.lines[8].state = OFF",
+                now=100.0,
+            )
+
+            agent._reconcile_pending_actions()
+            await agent._notify_recovered_actions()
+
+            self.assertTrue(api.sent_messages)
+            text = api.sent_messages[0]["text"]
+            self.assertIn("неизвестным исходом", text)
+            self.assertIn("smart_panel_01/line_off", text)
+            self.assertEqual(agent._recovered_actions, [])
+
     async def test_meeting_clear_resets_stale_chat_cursor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=False)

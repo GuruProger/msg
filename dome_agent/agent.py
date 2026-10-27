@@ -162,6 +162,7 @@ class DomeAgent:
         self._action_done_events: dict[str, asyncio.Event] = {}
         self._action_seq = 0
         self._action_error: Exception | None = None
+        self._recovered_actions: list[dict[str, Any]] = []
         self._advice_task: asyncio.Task[None] | None = None
         self._control_task: asyncio.Task[None] | None = None
         self._last_control_at = 0.0
@@ -449,6 +450,7 @@ class DomeAgent:
         self.stats["telemetry_frames"] += 1
 
         await self._poll_chat(snapshot)
+        await self._notify_recovered_actions()
 
         decision = self.rules.decide(snapshot, self.state.task)
         if decision.task_changed and decision.task is not None:
@@ -1336,6 +1338,7 @@ class DomeAgent:
 
     def _reconcile_pending_actions(self) -> None:
         """Block actions whose outcome was lost when the process stopped."""
+        self._recovered_actions = []
         try:
             recovered = self.state.reconcile_pending_actions(
                 ACTION_FAILURE_COOLDOWN_S
@@ -1344,6 +1347,15 @@ class DomeAgent:
             self._log_exception("state_reconcile", exc)
             return
         for key, entry in recovered.items():
+            self._recovered_actions.append(
+                {
+                    "action": key,
+                    "request": entry.get("request"),
+                    "expected": entry.get("expected"),
+                    "ref": entry.get("ref"),
+                    "started_at": entry.get("at"),
+                }
+            )
             self.log.write(
                 "action_reconcile",
                 action=key,
@@ -1369,6 +1381,36 @@ class DomeAgent:
             )
         except OSError as exc:
             self._log_exception("state_action", exc)
+
+    async def _notify_recovered_actions(self) -> None:
+        """Warn the operator about commands whose outcome was lost on restart."""
+        if not self._recovered_actions:
+            return
+        entries = self._recovered_actions
+        self._recovered_actions = []
+        labels: list[str] = []
+        for entry in entries[:5]:
+            request = entry.get("request")
+            node = ""
+            action = ""
+            if isinstance(request, Mapping):
+                node = str(request.get("node_id") or "").strip()
+                action = str(request.get("action") or "").strip()
+            key = str(entry.get("action") or "").strip()
+            labels.append(f"{node}/{action}" if node and action else key or "?")
+        suffix = f" и ещё {len(entries) - 5}" if len(entries) > 5 else ""
+        text = (
+            "После перезапуска есть команды с неизвестным исходом: "
+            f"{', '.join(labels)}{suffix}. Проверьте состояние вручную."
+        )
+        try:
+            await self._send_operator_message(
+                text,
+                dedupe_key="action_reconcile",
+                min_interval_s=0.0,
+            )
+        except Exception as exc:
+            self._log_exception("action_reconcile_notify", exc)
 
     async def _notify_action_failure(
         self,
