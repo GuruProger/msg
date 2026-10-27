@@ -512,6 +512,24 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_smoke_hold_waits_for_smoke_detector_telemetry(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_SMOKE"}
+        )
+        data["nodes"]["smoke_detector_02"]["online"] = False
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
+    def test_smoke_hold_waits_for_known_smoke_reading(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_SMOKE"}
+        )
+        data["nodes"]["smoke_detector_01"].pop("smoke_detected")
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
     def test_missing_climate_values_do_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(

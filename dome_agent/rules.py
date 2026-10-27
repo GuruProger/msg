@@ -801,6 +801,11 @@ class RuleEngine:
                 return False, "конденсат/влажность ещё выше нормы"
             return True, "влажность и точка росы в норме"
         if reason == "IL_SMOKE":
+            for node_id in ("smoke_detector_01", "smoke_detector_02"):
+                if not snapshot.online(node_id):
+                    return False, f"{node_id} недоступен; автоматический resume запрещён"
+                if snapshot.node(node_id).get("smoke_detected") is None:
+                    return False, f"{node_id}: состояние дыма неизвестно; автоматический resume запрещён"
             if _powder_present(snapshot):
                 return False, "дым ещё обнаружен"
             state = _interlock_state(snapshot, "IL_SMOKE")
