@@ -626,6 +626,28 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "climate_unknown")
 
+    def test_start_blocked_when_bus_voltage_unknown(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["smart_panel_01"]["bus_voltage_v"] = None
+        task = {
+            "message_id": 12,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "power_not_ready")
+
+    def test_start_blocked_when_bus_is_unpowered(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["smart_panel_01"]["bus_powered"] = False
+        task = {
+            "message_id": 13,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "power_not_ready")
+
     def test_missing_voc_does_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(

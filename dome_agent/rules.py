@@ -107,6 +107,16 @@ def _fire_ready(snapshot: Snapshot) -> bool:
     )
 
 
+def _power_ready(snapshot: Snapshot) -> bool:
+    if not snapshot.online("smart_panel_01"):
+        return False
+    panel = snapshot.node("smart_panel_01")
+    if panel.get("bus_powered") is False:
+        return False
+    voltage = as_float(panel.get("bus_voltage_v"))
+    return voltage is not None and voltage >= 200.0
+
+
 def _condensate_present(snapshot: Snapshot) -> bool:
     climate = snapshot.node("climate_sensor_01")
     humidity = as_float(climate.get("humidity_pct"))
@@ -1306,6 +1316,8 @@ class RuleEngine:
             return "fire_not_ready", "Пожарная автоматика не готова или недоступна: запуск производства запрещён."
         if not _climate_data_known(snapshot):
             return "climate_unknown", "Данные климата недоступны или неполны: запуск производства запрещён."
+        if not _power_ready(snapshot):
+            return "power_not_ready", "Напряжение шины неизвестно или ниже нормы: запуск производства запрещён."
         if _condensate_present(snapshot):
             return "condensate", "Риск конденсата: запуск станков запрещён."
         if node_id == "cnc_01":
