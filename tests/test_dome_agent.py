@@ -495,6 +495,48 @@ class LoggingStateTests(unittest.TestCase):
             self.assertFalse(loaded.action_allowed("x", 10.0, now=105.0))
             self.assertTrue(loaded.action_allowed("x", 10.0, now=111.0))
 
+    def test_corrupt_state_is_preserved_and_recovered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            corrupt = "{this is not json"
+            path.write_text(corrupt, encoding="utf-8")
+
+            state = StateStore(path)
+
+            self.assertIsNotNone(state.load_error)
+            self.assertIn("JSONDecodeError", state.load_error)
+            self.assertIsNone(state.task)
+            self.assertIsNotNone(state.corrupt_path)
+            self.assertEqual(state.corrupt_path.read_text(encoding="utf-8"), corrupt)
+            self.assertEqual(state.corrupt_path.stat().st_mode & 0o777, 0o600)
+
+            state.set_task({"message_id": 1, "items": []})
+            loaded = StateStore(path)
+            self.assertIsNone(loaded.load_error)
+            self.assertIsNone(loaded.corrupt_path)
+            self.assertEqual(loaded.task["message_id"], 1)
+
+    def test_non_object_state_is_preserved_and_recovered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            path.write_text("[]", encoding="utf-8")
+
+            state = StateStore(path)
+
+            self.assertEqual(state.load_error, "invalid top-level state value")
+            self.assertIsNotNone(state.corrupt_path)
+            self.assertEqual(state.corrupt_path.read_text(encoding="utf-8"), "[]")
+
+    def test_action_queue_event_is_loggable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log = AgentLog(tmp)
+            log.write("action_queue", event="drain_timeout", pending=1)
+            log.close()
+
+            records = read_logs(Path(tmp))
+            self.assertEqual(records[0]["kind"], "action_queue")
+            self.assertEqual(records[0]["event"], "drain_timeout")
+
     def test_failed_action_cooldown_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"

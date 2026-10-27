@@ -23,6 +23,7 @@ VALID_KINDS = {
     "decision",
     "action",
     "action_blocked",
+    "action_queue",
     "verification",
     "message",
     "llm_call",

@@ -203,6 +203,18 @@ class DomeAgent:
             models=[self.config.deepseek_model] if self.config.llm_available else [],
             config=self.config.safe_dict(),
         )
+        if self.state.load_error:
+            self.log.write(
+                "error",
+                where="state_load",
+                error=self.state.load_error,
+                recovered=True,
+                backup=(
+                    str(self.state.corrupt_path)
+                    if self.state.corrupt_path is not None
+                    else None
+                ),
+            )
         try:
             while not self._stop.is_set():
                 if self._past_deadline():

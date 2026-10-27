@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -36,19 +37,27 @@ class StateStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser()
         self.data = _default_state()
+        self.load_error: str | None = None
+        self.corrupt_path: Path | None = None
         self.load()
 
     def load(self) -> None:
+        self.load_error = None
+        self.corrupt_path = None
         if not self.path.exists():
             return
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, TypeError):
+        except (OSError, json.JSONDecodeError, TypeError) as exc:
             # A corrupt state must never prevent the agent from starting.
             self.data = _default_state()
+            self.load_error = f"{type(exc).__name__}: {exc}"
+            self._preserve_corrupt()
             return
         if not isinstance(raw, dict):
             self.data = _default_state()
+            self.load_error = "invalid top-level state value"
+            self._preserve_corrupt()
             return
         merged = _default_state()
         merged.update(raw)
@@ -63,6 +72,21 @@ class StateStore:
         if not isinstance(merged.get("notes"), dict):
             merged["notes"] = {}
         self.data = merged
+
+    def _preserve_corrupt(self) -> None:
+        """Keep a private copy of an unreadable state file for recovery."""
+        target = self.path.with_name(
+            f"{self.path.name}.corrupt-{time.time_ns()}"
+        )
+        try:
+            shutil.copy2(self.path, target)
+            try:
+                os.chmod(target, 0o600)
+            except OSError:
+                pass
+        except OSError:
+            return
+        self.corrupt_path = target
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
