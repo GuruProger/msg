@@ -594,6 +594,11 @@
     card.dataset.tone = options.tone || "neutral";
     setText(valueNode, options.value);
     setText(stateNode, options.state);
+    const unitNode = valueNode && valueNode.nextElementSibling;
+    if (unitNode && unitNode.classList.contains("kpi__unit")) {
+      const shown = options.value !== null && options.value !== undefined;
+      unitNode.hidden = !shown || String(options.value).trim() === "—";
+    }
     if (options.title) card.title = options.title;
   }
 
