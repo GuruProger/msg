@@ -15,7 +15,7 @@ from unittest import mock
 
 import httpx
 
-from dome_control.client import MISSING
+from dome_control.client import DomeConnectionError, MISSING
 from dome_agent.agent import DomeAgent
 from dome_agent.analysis import Snapshot, analyze_co2
 from dome_agent.chat import (
@@ -1087,6 +1087,11 @@ class NoEffectAPI(FakeAPI):
         }
 
 
+class ExplodingAPI(FakeAPI):
+    async def control_device(self, *args, **kwargs) -> dict:
+        raise DomeConnectionError("control transport failed")
+
+
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_reconciles_pending_action_intent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1676,6 +1681,27 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(
                 any("не выполнена" in item["text"] or "не подтверждена" in item["text"]
                     for item in api.sent_messages)
+            )
+
+    async def test_action_exception_notifies_operator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = ExplodingAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent._role = "team"
+            action = ActionSpec(
+                key="test-line-off-exception",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test exception notify",
+            )
+            with self.assertRaises(DomeConnectionError):
+                await agent._run_action(action, None, protective=False)
+            self.assertTrue(api.sent_messages)
+            self.assertTrue(
+                any("не выполнена" in item["text"] for item in api.sent_messages)
             )
 
     async def test_duplicate_pending_action_is_blocked(self) -> None:

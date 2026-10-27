@@ -936,6 +936,11 @@ class DomeAgent:
                 "failed",
                 f"{type(exc).__name__}: {exc}",
             )
+            if not self.config.dry_run:
+                try:
+                    await self._notify_action_failure(action, "failed")
+                except Exception as notify_exc:
+                    self._log_exception("action_failure_notify", notify_exc)
             raise
         if outcome in {"running", "pending"}:
             return
