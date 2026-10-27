@@ -207,6 +207,11 @@ class StateStore:
             return False
         return until > now
 
+    def action_succeeded(self, key: str) -> bool:
+        """Return True only when ``key`` was last recorded as successful."""
+        entry = (self.data.get("last_actions") or {}).get(str(key)) or {}
+        return bool(entry.get("success") is True)
+
     def failure_remaining(self, key: str, *, now: float | None = None) -> float:
         """Seconds left before a failed action may be retried."""
         now = time.time() if now is None else now

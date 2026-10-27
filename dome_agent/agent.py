@@ -56,6 +56,9 @@ LLM_CONTROL_INTERVAL_S = 10.0
 PENDING_TTL_S = 300.0
 ACTION_FAILURE_COOLDOWN_S = 900.0
 ACTION_DRAIN_TIMEOUT_S = 7.0
+ACTION_DEPENDENCY_TIMEOUT_S = 30.0
+ACTION_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "blocked", "unknown"})
+ACTION_NON_SUCCESS_STATUSES = frozenset({"failed", "blocked", "unknown"})
 
 _CONFIRM_WORDS = {"да", "подтверждаю", "выполняй", "выполнить", "ок", "давай", "yes", "confirm"}
 _CANCEL_WORDS = {"отмена", "отменить", "не надо", "нет", "стоп", "cancel", "no", "stop"}
@@ -151,6 +154,9 @@ class DomeAgent:
         ] = {}
         self._action_tasks: dict[str, asyncio.Task[None]] = {}
         self._queued_action_keys: set[str] = set()
+        self._action_status: dict[str, str] = {}
+        self._action_status_reason: dict[str, str] = {}
+        self._action_done_events: dict[str, asyncio.Event] = {}
         self._action_seq = 0
         self._action_error: Exception | None = None
         self._advice_task: asyncio.Task[None] | None = None
@@ -635,8 +641,243 @@ class DomeAgent:
         *,
         protective: bool = False,
     ) -> None:
-        for action in sorted(actions, key=lambda item: -item.priority):
+        by_key: dict[str, ActionSpec] = {}
+        for action in actions:
+            if isinstance(action, ActionSpec):
+                by_key.setdefault(action.key, action)
+        if not by_key:
+            return
+        ordered, cycles = self._order_actions(by_key)
+        blocked = self._preflight_dependencies(ordered, by_key, cycles)
+        for action in ordered:
+            reason = blocked.get(action.key)
+            if reason is not None:
+                self._block_action_dependency(action, reason, decision_ref)
+                continue
             self._enqueue_action(action, decision_ref, protective=protective)
+
+    def _order_actions(
+        self,
+        by_key: dict[str, ActionSpec],
+    ) -> tuple[list[ActionSpec], set[str]]:
+        """Order actions so dependencies are queued before dependents.
+
+        Independent actions keep the existing priority order.  A cycle is
+        reported instead of being executed; the dependent gate must fail closed.
+        """
+        ordered: list[ActionSpec] = []
+        temporary: set[str] = set()
+        permanent: set[str] = set()
+        cycles: set[str] = set()
+
+        def visit(key: str, stack: list[str]) -> None:
+            if key in permanent:
+                return
+            if key in temporary:
+                try:
+                    start = stack.index(key)
+                except ValueError:
+                    start = 0
+                cycles.update(stack[start:])
+                return
+            action = by_key.get(key)
+            if action is None:
+                return
+            temporary.add(key)
+            stack.append(key)
+            for dependency in action.depends_on:
+                visit(dependency, stack)
+            stack.pop()
+            temporary.discard(key)
+            permanent.add(key)
+            ordered.append(action)
+
+        for action in sorted(by_key.values(), key=lambda item: -item.priority):
+            visit(action.key, [])
+        return ordered, cycles
+
+    def _preflight_dependencies(
+        self,
+        ordered: list[ActionSpec],
+        by_key: dict[str, ActionSpec],
+        cycles: set[str],
+    ) -> dict[str, str]:
+        """Return deterministic block reasons for actions in this plan."""
+        blocked: dict[str, str] = {}
+        for action in ordered:
+            if action.key in cycles:
+                blocked[action.key] = (
+                    "dependency cycle: " + ", ".join(sorted(cycles))
+                )
+                continue
+            for dependency in action.depends_on:
+                if dependency in blocked:
+                    blocked[action.key] = (
+                        f"dependency {dependency} is blocked: {blocked[dependency]}"
+                    )
+                    break
+                if dependency in by_key:
+                    continue
+                if self._dependency_satisfied(dependency):
+                    continue
+                if self._action_status.get(dependency) in {"queued", "running"}:
+                    continue
+                blocked[action.key] = (
+                    f"dependency {dependency} was not scheduled or did not succeed"
+                )
+                break
+        return blocked
+
+    def _dependency_satisfied(self, key: str) -> bool:
+        if self._action_status.get(key) == "succeeded":
+            return True
+        return self.state.action_succeeded(key)
+
+    def _ensure_action_state(self, action: ActionSpec) -> None:
+        if self._action_status.get(action.key) in {"queued", "running"}:
+            return
+        self._action_status[action.key] = "queued"
+        self._action_status_reason.pop(action.key, None)
+        self._action_done_events[action.key] = asyncio.Event()
+
+    def _set_action_status(
+        self,
+        key: str,
+        status: str,
+        reason: str | None = None,
+    ) -> None:
+        self._action_status[key] = status
+        if reason:
+            self._action_status_reason[key] = reason
+        else:
+            self._action_status_reason.pop(key, None)
+        if status in ACTION_TERMINAL_STATUSES:
+            event = self._action_done_events.get(key)
+            if event is not None:
+                event.set()
+
+    def _block_action(
+        self,
+        action: ActionSpec,
+        reason: str,
+        decision_ref: int | None,
+        *,
+        source: str,
+    ) -> None:
+        self._ensure_action_state(action)
+        self._set_action_status(action.key, "blocked", reason)
+        block_key = f"{source}:{action.key}:{reason}"
+        if block_key in self._blocked_seen:
+            return
+        self._blocked_seen.add(block_key)
+        self.stats["actions_blocked"] += 1
+        fields: dict[str, Any] = {
+            "request": action.request(),
+            "reason": reason,
+            "unsafe": False,
+            "ref": decision_ref,
+            "expect": getattr(action.expect, "description", None),
+            "source": source,
+        }
+        if source == "dependency":
+            fields["depends_on"] = list(action.depends_on)
+        self.log.write("action_blocked", **fields)
+
+    def _block_action_dependency(
+        self,
+        action: ActionSpec,
+        reason: str,
+        decision_ref: int | None,
+    ) -> None:
+        self._block_action(
+            action,
+            reason,
+            decision_ref,
+            source="dependency",
+        )
+
+    async def _wait_for_dependencies(
+        self,
+        action: ActionSpec,
+    ) -> tuple[bool, str | None]:
+        if not action.depends_on:
+            return True, None
+        deadline = time.monotonic() + ACTION_DEPENDENCY_TIMEOUT_S
+        for dependency in action.depends_on:
+            status = self._action_status.get(dependency)
+            if status == "succeeded":
+                continue
+            if status in ACTION_NON_SUCCESS_STATUSES:
+                detail = self._action_status_reason.get(dependency)
+                return False, f"dependency {dependency} {status}: {detail or 'no reason'}"
+            if status is None:
+                if self._dependency_satisfied(dependency):
+                    continue
+                return False, f"dependency {dependency} was not scheduled"
+            event = self._action_done_events.get(dependency)
+            if event is None:
+                if self._dependency_satisfied(dependency):
+                    continue
+                return False, f"dependency {dependency} has no completion event"
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False, f"dependency {dependency} timed out"
+            try:
+                await asyncio.wait_for(event.wait(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return False, f"dependency {dependency} timed out"
+            status = self._action_status.get(dependency)
+            if status == "succeeded":
+                continue
+            if status in ACTION_NON_SUCCESS_STATUSES:
+                detail = self._action_status_reason.get(dependency)
+                return False, f"dependency {dependency} {status}: {detail or 'no reason'}"
+            return False, f"dependency {dependency} did not finish successfully"
+        return True, None
+
+    async def _run_action(
+        self,
+        action: ActionSpec,
+        decision_ref: int | None,
+        *,
+        protective: bool,
+    ) -> None:
+        if not self.config.dry_run and self._role != "team":
+            self._block_action(
+                action,
+                f"session role is {self._role or 'unknown'}, expected team",
+                decision_ref,
+                source="role",
+            )
+            return
+        self._ensure_action_state(action)
+        ready, reason = await self._wait_for_dependencies(action)
+        if not ready:
+            self._block_action_dependency(
+                action,
+                reason or "dependency did not succeed",
+                decision_ref,
+            )
+            return
+        self._set_action_status(action.key, "running")
+        try:
+            if protective:
+                outcome = await self._execute_protective(action, decision_ref)
+            else:
+                outcome = await self._execute_action(action, decision_ref)
+        except asyncio.CancelledError:
+            self._set_action_status(action.key, "blocked", "cancelled")
+            raise
+        except Exception as exc:
+            self._set_action_status(
+                action.key,
+                "failed",
+                f"{type(exc).__name__}: {exc}",
+            )
+            raise
+        if outcome in {"running", "pending"}:
+            return
+        self._set_action_status(action.key, outcome or "succeeded")
 
     def _enqueue_action(
         self,
@@ -650,6 +891,7 @@ class DomeAgent:
         queue_key = f"{'protective:' if protective else ''}{action.key}"
         if queue_key in self._queued_action_keys:
             return
+        self._ensure_action_state(action)
         lane = str(action.node_id or "").strip().casefold()
         queue = self._ensure_action_worker(lane)
         if queue is None:
@@ -669,10 +911,11 @@ class DomeAgent:
             _priority, _seq, action, decision_ref, protective = await queue.get()
             queue_key = f"{'protective:' if protective else ''}{action.key}"
             try:
-                if protective:
-                    await self._execute_protective(action, decision_ref)
-                else:
-                    await self._execute_action(action, decision_ref)
+                await self._run_action(
+                    action,
+                    decision_ref,
+                    protective=protective,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -687,10 +930,10 @@ class DomeAgent:
                 self._queued_action_keys.discard(queue_key)
                 queue.task_done()
 
-    async def _execute_action(self, action: ActionSpec, decision_ref: int | None) -> None:
+    async def _execute_action(self, action: ActionSpec, decision_ref: int | None) -> str:
         if self.config.dry_run:
             if action.key in self._dry_run_seen:
-                return
+                return "succeeded"
             self._dry_run_seen.add(action.key)
         request = action.request()
         decision = self.gate.check(action, dry_run=self.config.dry_run)
@@ -705,7 +948,7 @@ class DomeAgent:
                     unsafe=decision.unsafe,
                     ref=decision_ref,
                 )
-            return
+            return "blocked"
 
         expect = (
             action.expect
@@ -730,7 +973,7 @@ class DomeAgent:
                 "recent verification failed: retry cooldown is active",
                 expect.description,
             )
-            return
+            return "blocked"
         if not self._claim_action_key(lock_key):
             self._log_pending_block(
                 action,
@@ -739,7 +982,7 @@ class DomeAgent:
                 "action is already pending verification",
                 expect.description,
             )
-            return
+            return "running"
 
         verify = action.verify and not self.config.yolo
         allow_without_before = is_auto_protective(action)
@@ -778,7 +1021,7 @@ class DomeAgent:
                         expect=expect.description,
                         source="before_telemetry",
                     )
-                return
+                return "blocked"
             success = bool(
                 result.get("success")
                 or result.get("accepted")
@@ -891,8 +1134,14 @@ class DomeAgent:
                     False,
                     failure_cooldown_s=ACTION_FAILURE_COOLDOWN_S,
                 )
+            return "failed"
         finally:
             self._release_action_key(lock_key)
+        if not success:
+            return "failed"
+        if not verified:
+            return "unknown" if result.get("unknown") else "failed"
+        return "succeeded"
 
     @staticmethod
     def _action_lock_key(action: ActionSpec) -> str:
@@ -1162,11 +1411,10 @@ class DomeAgent:
         self,
         action: ActionSpec,
         decision_ref: int | None,
-    ) -> None:
+    ) -> str:
         gate_decision = self.gate.check(action, dry_run=self.config.dry_run)
         if gate_decision.allowed:
-            await self._execute_action(action, decision_ref)
-            return
+            return await self._execute_action(action, decision_ref)
         key = f"protective:{action.key}"
         if key not in self._blocked_seen:
             self._blocked_seen.add(key)
@@ -1181,7 +1429,7 @@ class DomeAgent:
                 ref=decision_ref,
             )
         if not self.config.control_enabled:
-            return
+            return "blocked"
         command = ModelCommand.from_action(action)
         self._pending = PendingProposal(
             commands=(command,),
@@ -1201,6 +1449,7 @@ class DomeAgent:
             dedupe_key=f"protective-force:{_digest(action.key)}",
             min_interval_s=0,
         )
+        return "blocked"
 
     async def _schedule_llm_control(
         self,

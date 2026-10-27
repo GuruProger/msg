@@ -176,6 +176,10 @@ class FakeAPI:
             node["mode"] = value
         elif action == "set_primary_sensor":
             node["primary_co2_sensor"] = value
+        elif action == "set_data_trust":
+            if isinstance(value, dict):
+                trust = node.setdefault("data_trust", {})
+                trust[f"{value.get('node')}.{value.get('param')}"] = value.get("trust")
         elif action == "reset_interlock":
             interlocks = node.get("interlocks", {})
             if isinstance(interlocks, dict) and str(value) in interlocks:
@@ -322,6 +326,15 @@ class RuleTests(unittest.TestCase):
         self.assertIn(("set_primary_sensor", "climate_sensor_02"), actions)
         self.assertIn(("set_data_trust", {"node": "climate_sensor_01", "param": "co2_ppm", "trust": "UNRELIABLE"}), actions)
         self.assertLess(actions.index(("set_primary_sensor", "climate_sensor_02")), actions.index(("reset_interlock", "IL_CO2")))
+        by_action = {action.action: action for action in result.actions}
+        self.assertEqual(
+            by_action["set_primary_sensor"].depends_on,
+            (by_action["set_data_trust"].key,),
+        )
+        self.assertEqual(
+            by_action["reset_interlock"].depends_on,
+            (by_action["set_primary_sensor"].key,),
+        )
 
     def test_delayed_co2_backups_do_not_refute_current_trip(self) -> None:
         data = base_telemetry()
@@ -475,6 +488,10 @@ class LoggingStateTests(unittest.TestCase):
             loaded = StateStore(path)
             self.assertEqual(loaded.task["message_id"], 7)
             self.assertTrue(loaded.seen_message(7))
+            self.assertTrue(loaded.action_succeeded("x"))
+            self.assertFalse(loaded.action_succeeded("missing"))
+            loaded.mark_action("y", success=False, now=106.0)
+            self.assertFalse(loaded.action_succeeded("y"))
             self.assertFalse(loaded.action_allowed("x", 10.0, now=105.0))
             self.assertTrue(loaded.action_allowed("x", 10.0, now=111.0))
 
@@ -839,6 +856,7 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             line8["protection_state"] = "TRIPPED"
             api = GatedVerificationAPI(data)
             agent = DomeAgent(config, api=api)
+            agent._role = "team"
             self.addAsyncCleanup(agent._shutdown)
 
             slow = ActionSpec(
@@ -897,6 +915,186 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 timeout=3.0,
             )
+
+    async def test_action_dependency_runs_only_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            agent._role = "team"
+            self.addAsyncCleanup(agent._shutdown)
+
+            first = ActionSpec(
+                key="dep-set-primary",
+                node_id="dome_automation_01",
+                action="set_primary_sensor",
+                value="climate_sensor_02",
+                reason="dependency must succeed first",
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "set_primary_sensor",
+                    "climate_sensor_02",
+                    timeout_s=0.2,
+                ),
+            )
+            second = ActionSpec(
+                key="dep-reset-interlock",
+                node_id="dome_automation_01",
+                action="reset_interlock",
+                value="IL_CO2",
+                reason="dependent action",
+                depends_on=(first.key,),
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "reset_interlock",
+                    "IL_CO2",
+                    timeout_s=0.2,
+                ),
+            )
+            agent._enqueue_actions([second, first], None)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(queue.join() for queue in agent._action_queues.values())
+                ),
+                timeout=2.0,
+            )
+
+            self.assertEqual(
+                [item["action"] for item in api.actions],
+                ["set_primary_sensor", "reset_interlock"],
+            )
+
+    async def test_failed_dependency_blocks_dependent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = NoEffectAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            agent._role = "team"
+            self.addAsyncCleanup(agent._shutdown)
+
+            first = ActionSpec(
+                key="dep-set-primary",
+                node_id="dome_automation_01",
+                action="set_primary_sensor",
+                value="climate_sensor_02",
+                reason="dependency will fail verification",
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "set_primary_sensor",
+                    "climate_sensor_02",
+                    timeout_s=0.1,
+                ),
+            )
+            second = ActionSpec(
+                key="dep-reset-interlock",
+                node_id="dome_automation_01",
+                action="reset_interlock",
+                value="IL_CO2",
+                reason="must not run after failed dependency",
+                depends_on=(first.key,),
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "reset_interlock",
+                    "IL_CO2",
+                    timeout_s=0.1,
+                ),
+            )
+            agent._enqueue_actions([second, first], None)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(queue.join() for queue in agent._action_queues.values())
+                ),
+                timeout=2.0,
+            )
+
+            self.assertEqual(
+                [item["action"] for item in api.actions],
+                ["set_primary_sensor"],
+            )
+            records = read_logs(config.log_dir)
+            blocked = [
+                record
+                for record in records
+                if record["kind"] == "action_blocked"
+                and record.get("source") == "dependency"
+            ]
+            self.assertTrue(blocked)
+            self.assertIn("dep-set-primary", blocked[-1]["reason"])
+
+    async def test_unscheduled_dependency_is_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            agent._role = "team"
+            self.addAsyncCleanup(agent._shutdown)
+
+            child = ActionSpec(
+                key="dep-child",
+                node_id="dome_automation_01",
+                action="reset_interlock",
+                value="IL_CO2",
+                reason="dependency was never scheduled",
+                depends_on=("missing-dependency",),
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "reset_interlock",
+                    "IL_CO2",
+                    timeout_s=0.1,
+                ),
+            )
+            agent._enqueue_actions([child], None)
+
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            blocked = [
+                record
+                for record in records
+                if record["kind"] == "action_blocked"
+                and record.get("source") == "dependency"
+            ]
+            self.assertTrue(blocked)
+            self.assertIn("missing-dependency", blocked[-1]["reason"])
+
+    async def test_action_worker_blocks_when_role_is_not_team(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            agent._role = "guest"
+            self.addAsyncCleanup(agent._shutdown)
+
+            action = ActionSpec(
+                key="role-blocked",
+                node_id="dome_automation_01",
+                action="reset_interlock",
+                value="IL_CO2",
+                reason="role must be rechecked before execution",
+                expect=expected_effect(
+                    "dome_automation_01",
+                    "reset_interlock",
+                    "IL_CO2",
+                    timeout_s=0.1,
+                ),
+            )
+            agent._enqueue_actions([action], None)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(queue.join() for queue in agent._action_queues.values())
+                ),
+                timeout=1.0,
+            )
+
+            self.assertEqual(api.actions, [])
+            records = read_logs(config.log_dir)
+            blocked = [
+                record
+                for record in records
+                if record["kind"] == "action_blocked"
+                and record.get("source") == "role"
+            ]
+            self.assertTrue(blocked)
+            self.assertIn("expected team", blocked[-1]["reason"])
 
     async def test_before_telemetry_policy_blocks_normal_but_not_emergency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
