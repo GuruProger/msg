@@ -1314,15 +1314,37 @@ class RuleEngine:
             return None
 
         if kind == "print":
-            if as_bool(node.get("bed_clear")) is False:
-                _mark(items, index, "pending", note="bed occupied")
+            bed_clear = node.get("bed_clear")
+            if as_bool(bed_clear) is False:
+                unknown = bed_clear is None
+                _mark(items, index, "pending", note="bed state unknown" if unknown else "bed occupied")
                 return RuleResult(
-                    situation="Стол принтера занят",
-                    cause="bed_clear=false; нужен remove_part Оператором",
+                    situation=(
+                        "Состояние стола принтера неизвестно"
+                        if unknown
+                        else "Стол принтера занят"
+                    ),
+                    cause=(
+                        "bed_clear отсутствует; запуск без подтверждения запрещён"
+                        if unknown
+                        else "bed_clear=false; нужен remove_part Оператором"
+                    ),
                     confidence=0.95,
-                    plan=["не запускать печать", "попросить Оператора снять деталь"],
+                    plan=(
+                        ["не запускать печать", "запросить подтверждение состояния стола"]
+                        if unknown
+                        else ["не запускать печать", "попросить Оператора снять деталь"]
+                    ),
                     messages=[OutgoingMessage(
-                        "Стол 3D-принтера занят. Снимите деталь и откройте бокс, затем я запущу печать.",
+                        (
+                            "Не удалось подтвердить, что стол 3D-принтера свободен. "
+                            "Проверьте стол и подтвердите готовность."
+                        )
+                        if unknown
+                        else (
+                            "Стол 3D-принтера занят. Снимите деталь и откройте бокс, "
+                            "затем я запущу печать."
+                        ),
                         f"printer:bed:{task.get('message_id')}",
                         min_interval_s=300,
                     )],

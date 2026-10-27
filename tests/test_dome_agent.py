@@ -673,6 +673,30 @@ class RuleTests(unittest.TestCase):
         ))
         self.assertNotIn("остановлено", result.messages[0].text)
 
+    def test_missing_bed_clear_blocks_with_unknown_message(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].pop("bed_clear", None)
+        task = {
+            "message_id": 21,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "bed state unknown")
+        self.assertIn("Не удалось подтвердить", result.messages[0].text)
+
+    def test_false_bed_clear_blocks_with_occupied_message(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"]["bed_clear"] = False
+        task = {
+            "message_id": 22,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "bed occupied")
+        self.assertIn("занят", result.messages[0].text)
+
     def test_start_blocked_by_radiation_alarm(self) -> None:
         data = base_telemetry()
         data["nodes"]["radiation_sensor_01"]["dose_rate_usv_h"] = 2.0
