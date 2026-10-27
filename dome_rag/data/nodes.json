@@ -74,7 +74,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -145,6 +145,7 @@
    "",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -174,21 +175,21 @@
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.5
+    "sample": 0.71
    },
    {
     "key": "voc_index",
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 97
+    "sample": 117
    },
    {
     "key": "chem_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 0.08
    },
    {
     "key": "warming_up",
@@ -210,14 +211,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.972
+    "sample": 1.0
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -255,6 +256,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -307,21 +309,21 @@
     "unit": "m/s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1017.0
+    "sample": 861.0
    },
    {
     "key": "signal_quality_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 73.3
+    "sample": 85.9
    },
    {
     "key": "bitrate_kbps",
     "unit": "kbps",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 34.36
+    "sample": 47.24
    },
    {
     "key": "state",
@@ -336,7 +338,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -396,6 +398,7 @@
    "изменить протокол",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -417,28 +420,28 @@
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 39.97
+    "sample": 81.71
    },
    {
     "key": "voltage_v",
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 25.95
+    "sample": 27.89
    },
    {
     "key": "current_a",
     "unit": "A",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1.58
+    "sample": 49.84
    },
    {
     "key": "power_w",
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 41.1
+    "sample": 1390.8
    },
    {
     "key": "nominal_capacity_ah",
@@ -459,7 +462,7 @@
     "unit": "kWh",
     "kind": "computed",
     "trust": "computed",
-    "sample": 2.559
+    "sample": 2.558
    },
    {
     "key": "state",
@@ -482,14 +485,14 @@
     "unit": "mV",
     "kind": "computed",
     "trust": "computed",
-    "sample": 65.4
+    "sample": 65.9
    },
    {
     "key": "temperature_c",
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 14.39
+    "sample": 20.26
    },
    {
     "key": "charge_allowed",
@@ -503,7 +506,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -537,6 +540,7 @@
   "controls_doc": [
    "отдельные команды не требуются"
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -558,7 +562,7 @@
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.093
+    "sample": 0.0
    },
    {
     "key": "substance",
@@ -603,14 +607,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.976
+    "sample": 0.967
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -658,6 +662,7 @@
    "установить пороговые значения",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -687,28 +692,28 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 20.64
+    "sample": 21.62
    },
    {
     "key": "humidity_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 48.6
+    "sample": 46.5
    },
    {
     "key": "co2_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 725
+    "sample": 748
    },
    {
     "key": "dew_point_c",
     "unit": "°C",
     "kind": "computed",
     "trust": "computed",
-    "sample": 9.41
+    "sample": 9.65
    },
    {
     "key": "sensor_state",
@@ -723,14 +728,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.976
+    "sample": 0.973
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -776,6 +781,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -805,28 +811,28 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 21.73
+    "sample": 22.84
    },
    {
     "key": "humidity_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 50.0
+    "sample": 48.6
    },
    {
     "key": "co2_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 753
+    "sample": 758
    },
    {
     "key": "dew_point_c",
     "unit": "°C",
     "kind": "computed",
     "trust": "computed",
-    "sample": 10.85
+    "sample": 11.44
    },
    {
     "key": "reading_delay_s",
@@ -840,21 +846,21 @@
     "unit": "°C",
     "kind": "computed",
     "trust": "computed",
-    "sample": 1.157
+    "sample": 1.139
    },
    {
     "key": "drift_humidity_pct",
     "unit": "%",
     "kind": "computed",
     "trust": "computed",
-    "sample": 1.13
+    "sample": 1.49
    },
    {
     "key": "drift_co2_ppm",
     "unit": "ppm",
     "kind": "computed",
     "trust": "computed",
-    "sample": 18.7
+    "sample": 24.8
    },
    {
     "key": "sensor_state",
@@ -869,14 +875,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.736
+    "sample": 0.724
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -913,6 +919,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -942,28 +949,28 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 22.01
+    "sample": 23.42
    },
    {
     "key": "humidity_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 50.4
+    "sample": 54.1
    },
    {
     "key": "co2_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 765
+    "sample": 844
    },
    {
     "key": "dew_point_c",
     "unit": "°C",
     "kind": "computed",
     "trust": "computed",
-    "sample": 11.22
+    "sample": 13.61
    },
    {
     "key": "reading_delay_s",
@@ -977,21 +984,21 @@
     "unit": "°C",
     "kind": "computed",
     "trust": "computed",
-    "sample": 1.176
+    "sample": 1.635
    },
    {
     "key": "drift_humidity_pct",
     "unit": "%",
     "kind": "computed",
     "trust": "computed",
-    "sample": 2.25
+    "sample": 5.85
    },
    {
     "key": "drift_co2_ppm",
     "unit": "ppm",
     "kind": "computed",
     "trust": "computed",
-    "sample": 37.5
+    "sample": 97.5
    },
    {
     "key": "sensor_state",
@@ -1006,14 +1013,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.742
+    "sample": 0.608
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -1050,6 +1057,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -1086,14 +1094,14 @@
     "unit": "mm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 68.84
+    "sample": 5.035
    },
    {
     "key": "y_mm",
     "unit": "mm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 60.721
+    "sample": 6.36
    },
    {
     "key": "z_mm",
@@ -1142,8 +1150,8 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "pcb_relay_driver.nc",
-    "enum_hint": "pcb_relay_driver.nc"
+    "sample": "pcb_power_board.nc",
+    "enum_hint": "pcb_power_board.nc"
    },
    {
     "key": "files",
@@ -1164,14 +1172,14 @@
     "unit": "s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 5400.0
+    "sample": 4320.0
    },
    {
     "key": "job_duration_s",
     "unit": "s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 5400.0
+    "sample": 4320.0
    },
    {
     "key": "job_time_left_s",
@@ -1185,7 +1193,7 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": true
+    "sample": false
    },
    {
     "key": "alarm",
@@ -1234,7 +1242,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 21.8
+    "sample": 22.6
    },
    {
     "key": "quality_state",
@@ -1284,7 +1292,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -1432,6 +1440,7 @@
    "`server_hold` — удержание сервером: FeedHold с остановкой шпинделя (реальный GRBL: `!` + Spindle Stop override 0x9E; если не сработало — безопасная отмена задания); `release_hold` — снять удержание (админ)",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -1453,15 +1462,15 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 1674.5
    },
    {
     "key": "state",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "OFF",
-    "enum_hint": "OFF"
+    "sample": "ON",
+    "enum_hint": "ON"
    },
    {
     "key": "fault_code",
@@ -1482,7 +1491,7 @@
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0
+    "sample": 3
    },
    {
     "key": "preheat_state",
@@ -1497,28 +1506,28 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 14.3
+    "sample": 88.6
    },
    {
     "key": "fuel_consumption_l_h",
     "unit": "L/h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 0.869
    },
    {
     "key": "runtime_h",
     "unit": "h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 1.8667
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -1574,6 +1583,7 @@
    "включить",
    "выключить"
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -1685,7 +1695,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -1795,6 +1805,7 @@
   ],
   "telemetry_doc": [],
   "controls_doc": [],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -1830,21 +1841,21 @@
     "unit": "Pa",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1.1
+    "sample": 0.4
    },
    {
     "key": "leak_rate_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 7.99791
+    "sample": 16.01001
    },
    {
     "key": "leak_detected",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": false
+    "sample": true
    },
    {
     "key": "state",
@@ -1866,7 +1877,7 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": true
+    "sample": false
    },
    {
     "key": "fault_code",
@@ -1880,7 +1891,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -1935,7 +1946,9 @@
   "aliases": [
    "герметизация",
    "клапан",
-   "утечка"
+   "разгерметизация",
+   "утечка воздуха",
+   "утечка давления"
   ],
   "telemetry_doc": [
    "положение клапанов",
@@ -1951,6 +1964,7 @@
    "сбросить ошибку",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -1972,28 +1986,28 @@
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 30.1
+    "sample": 28.0
    },
    {
     "key": "gpu_load_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 57.2
+    "sample": 23.1
    },
    {
     "key": "free_memory_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 72.0
+    "sample": 52.3
    },
    {
     "key": "temperature_c",
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 52.6
+    "sample": 54.4
    },
    {
     "key": "services",
@@ -2042,7 +2056,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2097,7 +2111,8 @@
   "aliases": [
    "raspberry",
    "вычисления",
-   "сервер"
+   "сервер",
+   "утечка памяти"
   ],
   "telemetry_doc": [
    "загрузка CPU, %",
@@ -2113,6 +2128,7 @@
    "перезагрузить узел",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2134,14 +2150,14 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 21.8
+    "sample": 22.6
    },
    {
     "key": "coolant_flow_l_min",
     "unit": "L/min",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 4.14
+    "sample": 4.23
    },
    {
     "key": "pump_power_w",
@@ -2155,7 +2171,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 21.1
+    "sample": 22.3
    },
    {
     "key": "speed_pct",
@@ -2198,7 +2214,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2266,6 +2282,7 @@
    "сбросить аварию",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2287,7 +2304,7 @@
     "unit": "bar",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 6.02
+    "sample": 5.89
    },
    {
     "key": "valves",
@@ -2364,7 +2381,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2444,6 +2461,7 @@
    "блокировка автоматики",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2472,28 +2490,28 @@
     "unit": "L",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 150.0
+    "sample": 199.137
    },
    {
     "key": "level_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 75.0
+    "sample": 99.5
    },
    {
     "key": "consumption_l_h",
     "unit": "L/h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 0.87
    },
    {
     "key": "water_content_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 298.986
+    "sample": 478.587
    },
    {
     "key": "contamination_pct",
@@ -2515,7 +2533,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 11.1
+    "sample": 17.8
    },
    {
     "key": "state",
@@ -2530,14 +2548,14 @@
     "unit": "L",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 150.0
+    "sample": 100.0
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2576,6 +2594,7 @@
    "нет (или перекачка между баками — при наличии)",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2604,14 +2623,14 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 98.9
+    "sample": 105.4
    },
    {
     "key": "fan_rpm",
     "unit": "rpm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 2728
+    "sample": 2706
    },
    {
     "key": "airflow_pct",
@@ -2633,7 +2652,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 55.5
+    "sample": 61.1
    },
    {
     "key": "alarm",
@@ -2654,7 +2673,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2699,7 +2718,9 @@
    }
   ],
   "aliases": [
-   "вытяжка"
+   "вытяжка",
+   "вытяжная",
+   "вытяжная вентиляция"
   ],
   "telemetry_doc": [
    "включена/выключена",
@@ -2714,6 +2735,7 @@
    "сбросить аварию",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2735,14 +2757,14 @@
     "unit": "g",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 768.0
+    "sample": 588.0
    },
    {
     "key": "filament_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 76.8
+    "sample": 58.8
    },
    {
     "key": "spool_capacity_g",
@@ -2770,7 +2792,7 @@
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 85.0
+    "sample": 84.9
    },
    {
     "key": "low_stock_warnings",
@@ -2792,14 +2814,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.991
+    "sample": 0.992
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2824,7 +2846,58 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
+ },
+ {
+  "node_id": "meeting_01",
+  "code_name": "meeting",
+  "title": "Песочница",
+  "system": "unknown",
+  "system_ru": "Песочница",
+  "params": [],
+  "controls": [
+   {
+    "action": "post_message",
+    "label": "отправить сообщение в чат",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "value_schema": {
+     "text": "<=4000",
+     "to": "<=64"
+    },
+    "verify_by": [],
+    "notes": "не более 10 сообщений за 10 секунд"
+   },
+   {
+    "action": "read_messages",
+    "label": "прочитать историю чата",
+    "allowed_for": "agent",
+    "api_confirmed": true,
+    "kind": "query",
+    "value_schema": {
+     "since_id": "int",
+     "limit": "1..200"
+    }
+   }
+  ],
+  "aliases": [
+   "задание",
+   "оператор",
+   "песочница",
+   "чат"
+  ],
+  "telemetry_doc": [
+   "число сообщений и id последнего сообщения",
+   "последние 10 сообщений (id, время, отправитель: роль/команда/имя агента, адресат, текст)"
+  ],
+  "controls_doc": [
+   "отправить сообщение (`post_message`): текст или `{\"text\", \"name\"?, \"to\"?}` отправителя (роль, команда) проставляет сервер; не больше 10 сообщений за 10 с",
+   "очистить историю (`clear`) — только админ",
+   "прочитать предыдущие сообщения (`read_messages`): `{\"since_id\"?, \"limit\"? 1..200}` Новое сообщение сразу рассылается всем подключённым: `{\"type\": \"meeting_message\", \"message\": {...}}`."
+  ],
+  "data_source": "registry",
+  "source": "dome_sandbox_nodes.md (снимок телеметрии недоступен)"
  },
  {
   "node_id": "network_link_01",
@@ -2845,8 +2918,8 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "MAIN",
-    "enum_hint": "MAIN"
+    "sample": "RESERVE",
+    "enum_hint": "RESERVE"
    },
    {
     "key": "link_state",
@@ -2861,14 +2934,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0
+    "sample": 2
    },
    {
     "key": "rx_power_dbm",
     "unit": "dBm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": -8.81
+    "sample": -11.52
    },
    {
     "key": "reserve_link_state",
@@ -2883,7 +2956,7 @@
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 0.1
    },
    {
     "key": "panel_link_state",
@@ -2905,7 +2978,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -2930,11 +3003,13 @@
    }
   ],
   "aliases": [
+   "линия связи",
    "связь",
    "сеть"
   ],
   "telemetry_doc": [],
   "controls_doc": [],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -2971,7 +3046,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 22.8
+    "sample": 22.1
    },
    {
     "key": "nozzle_target_c",
@@ -2985,7 +3060,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 21.4
+    "sample": 22.0
    },
    {
     "key": "bed_target_c",
@@ -2999,8 +3074,8 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "bracket_v2.gcode",
-    "enum_hint": "bracket_v2.gcode"
+    "sample": "fan_duct.gcode",
+    "enum_hint": "fan_duct.gcode"
    },
    {
     "key": "progress_pct",
@@ -3014,14 +3089,14 @@
     "unit": "s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 7200.0
+    "sample": 5400.0
    },
    {
     "key": "print_duration_s",
     "unit": "s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 7200.0
+    "sample": 5400.0
    },
    {
     "key": "print_time_left_s",
@@ -3035,21 +3110,21 @@
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": true
+    "sample": false
    },
    {
     "key": "x_mm",
     "unit": "mm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 84.26
+    "sample": 73.22
    },
    {
     "key": "y_mm",
     "unit": "mm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 139.79
+    "sample": 145.9
    },
    {
     "key": "z_mm",
@@ -3150,14 +3225,14 @@
     "unit": "g",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 24.0
+    "sample": 18.0
    },
    {
     "key": "filament_used_g",
     "unit": "g",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 24.0
+    "sample": 18.0
    },
    {
     "key": "part_defect",
@@ -3206,7 +3281,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3337,6 +3412,7 @@
    "`remove_part` — Оператор снял деталь (физическое действие)",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -3358,14 +3434,14 @@
     "unit": "µSv/h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.16
+    "sample": 0.127
    },
    {
     "key": "counts_per_minute",
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 24
+    "sample": 19
    },
    {
     "key": "event_type",
@@ -3410,14 +3486,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.979
+    "sample": 0.966
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3464,6 +3540,7 @@
    "установить пороговые значения",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -3500,28 +3577,28 @@
     "unit": "kbps",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1.69
+    "sample": 5.86
    },
    {
     "key": "noise_level_dbm",
     "unit": "dBm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": -120.9
+    "sample": -119.3
    },
    {
     "key": "snr_db",
     "unit": "dB",
     "kind": "computed",
     "trust": "computed",
-    "sample": 11.8
+    "sample": 16.1
    },
    {
     "key": "signal_quality_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 58.8
+    "sample": 80.5
    },
    {
     "key": "reception",
@@ -3543,7 +3620,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3591,6 +3668,7 @@
    "Изменение основной частоты",
    "Изменение протокола"
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -3617,23 +3695,23 @@
    {
     "key": "epicenter_distance_km",
     "unit": "km",
-    "kind": "unknown",
-    "trust": "unknown",
-    "sample": null
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 29.8
    },
    {
     "key": "amplitude_mm_s",
     "unit": "s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.035
+    "sample": 0.0474
    },
    {
     "key": "estimated_magnitude",
     "unit": null,
-    "kind": "unknown",
-    "trust": "unknown",
-    "sample": null
+    "kind": "measurement",
+    "trust": "sensor",
+    "sample": 2.1
    },
    {
     "key": "threshold_mm_s",
@@ -3655,14 +3733,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.983
+    "sample": 0.978
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3698,6 +3776,7 @@
    "Установка порогового значения",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -3741,7 +3820,7 @@
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 230.7
+    "sample": 231.8
    },
    {
     "key": "bus_powered",
@@ -3755,14 +3834,14 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 251.5
+    "sample": 195.9
    },
    {
     "key": "total_current_a",
     "unit": "A",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1.15
+    "sample": 0.89
    },
    {
     "key": "lines_on_count",
@@ -3776,7 +3855,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3854,6 +3933,7 @@
    "эмулировать срабатывание защиты (сервер/админ) Команды замороженной линии отклоняются. Кризис №24 («тихий дроп») может подтвердить команду агента, не исполнив её, — результат проверяется по состоянию, току и мощности линии. 1. Производственный отдел 2. ЧПУ-фрезер 3. 3D-принтер 4. Обычное освещение 5. Аварийное освещение 6. Вытяжка FabLab 7. Резервная линия 8. Резервная линия / линия для сценариев фантомного потребления",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -3890,7 +3970,7 @@
     "unit": "%",
     "kind": "computed",
     "trust": "computed",
-    "sample": 0.0
+    "sample": 0.16
    },
    {
     "key": "alarm_state",
@@ -3920,14 +4000,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.986
+    "sample": 0.976
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -3964,6 +4044,7 @@
    "сбросить тревогу (`RESET_ALARM`)",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -4000,7 +4081,7 @@
     "unit": "%",
     "kind": "computed",
     "trust": "computed",
-    "sample": 0.0
+    "sample": 0.11
    },
    {
     "key": "alarm_state",
@@ -4022,22 +4103,22 @@
     "unit": null,
     "kind": "state",
     "trust": "meta",
-    "sample": "DEGRADED",
-    "enum_hint": "DEGRADED"
+    "sample": "OK",
+    "enum_hint": "OK"
    },
    {
     "key": "confidence",
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.56
+    "sample": 0.984
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -4063,6 +4144,7 @@
   "aliases": [],
   "telemetry_doc": [],
   "controls_doc": [],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -4091,35 +4173,35 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 44.1
+    "sample": 52.8
    },
    {
     "key": "battery_voltage_v",
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 25.95
+    "sample": 27.82
    },
    {
     "key": "battery_current_a",
     "unit": "A",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1.7
+    "sample": 50.0
    },
    {
     "key": "battery_power_w",
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 44.2
+    "sample": 1390.9
    },
    {
     "key": "battery_soc_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 39.97
+    "sample": 81.76
    },
    {
     "key": "battery_capacity_kwh",
@@ -4133,14 +4215,14 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 366.0
+    "sample": 311.9
    },
    {
     "key": "output_voltage_v",
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 230.0
+    "sample": 231.8
    },
    {
     "key": "output_limit_pct",
@@ -4154,45 +4236,45 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 366.0
+    "sample": 0.0
    },
    {
     "key": "generator_power_w",
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.0
+    "sample": 1650.0
    },
    {
     "key": "ac_source",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "GRID",
-    "enum_hint": "GRID"
+    "sample": "GENERATOR",
+    "enum_hint": "GENERATOR"
    },
    {
     "key": "grid_state",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "AVAILABLE",
-    "enum_hint": "AVAILABLE"
+    "sample": "UNAVAILABLE",
+    "enum_hint": "UNAVAILABLE"
    },
    {
     "key": "grid_voltage_v",
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 229.6
+    "sample": 0.0
    },
    {
     "key": "mode",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "GRID_ONLY",
-    "enum_hint": "GRID_ONLY"
+    "sample": "HYBRID",
+    "enum_hint": "HYBRID"
    },
    {
     "key": "mppt_enabled",
@@ -4228,7 +4310,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 38.6
+    "sample": 39.4
    },
    {
     "key": "fan_mode",
@@ -4251,7 +4333,7 @@
     "unit": "A",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.251
+    "sample": 0.252
    },
    {
     "key": "error",
@@ -4287,7 +4369,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -4399,6 +4481,7 @@
    "управление вентилятором — если поддерживается реальным оборудованием",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -4483,7 +4566,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 9.3
+    "sample": 16.5
    },
    {
     "key": "soiling_loss_pct",
@@ -4497,7 +4580,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -4573,6 +4656,7 @@
    "отключить все MPPT-каналы",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -4594,35 +4678,35 @@
     "unit": "m³/h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 240.4
+    "sample": 212.1
    },
    {
     "key": "fresh_air_m3_h",
     "unit": "m³/h",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 120.2
+    "sample": 106.0
    },
    {
     "key": "supply_temp_c",
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 19.2
+    "sample": 21.1
    },
    {
     "key": "supply_humidity_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 57.2
+    "sample": 53.8
    },
    {
     "key": "filter_clog_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 12.0
+    "sample": 0.0
    },
    {
     "key": "filter_state",
@@ -4637,14 +4721,14 @@
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 16.9
+    "sample": 12.7
    },
    {
     "key": "speed_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 35.0
+    "sample": 40.0
    },
    {
     "key": "mode",
@@ -4681,7 +4765,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -4772,6 +4856,7 @@
    "сбросить аварию",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -4842,14 +4927,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 182
+    "sample": 189
    },
    {
     "key": "dust_voltage_v",
     "unit": "V",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.89
+    "sample": 0.924
    },
    {
     "key": "locks",
@@ -4884,7 +4969,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -4954,9 +5039,9 @@
    }
   ],
   "aliases": [
-   "fablab",
    "мс-тюк",
-   "теплица fablab"
+   "теплица fablab",
+   "теплица фаблаб"
   ],
   "telemetry_doc": [
    "RPM вентиляторов (6 шт, индексы 0..5), оборотов в минуту",
@@ -4981,6 +5066,7 @@
    "Открыть/закрыть дверь (`set_door`) — физическое действие Оператора, только при открытом замке Пока на шине коллизия (№22, опрос чаще 500 мс), команды агента на запись (вентиляторы, замки, пылесос) теряются без ошибки.",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5073,7 +5159,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5151,6 +5237,7 @@
    "Заблокировать/разблокировать общий магнитный замок (оба замка одновременно)",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5172,35 +5259,35 @@
     "unit": "NTU",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.04
+    "sample": 0.2
    },
    {
     "key": "ph",
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 7.22
+    "sample": 7.11
    },
    {
     "key": "tds_ppm",
     "unit": "ppm",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 161.0
+    "sample": 164.0
    },
    {
     "key": "residual_chlorine_mg_l",
     "unit": "L",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.69
+    "sample": 0.68
    },
    {
     "key": "pressure_drop_bar",
     "unit": "bar",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.32
+    "sample": 0.33
    },
    {
     "key": "active_filter",
@@ -5234,7 +5321,7 @@
     "unit": null,
     "kind": "computed",
     "trust": "computed",
-    "sample": 920.5
+    "sample": 886.5
    },
    {
     "key": "system_state",
@@ -5256,14 +5343,14 @@
     "unit": "NTU",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.5
+    "sample": 2.45
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5326,6 +5413,7 @@
    "сбросить предупреждение",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5354,7 +5442,7 @@
     "unit": "bar",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 3.3
+    "sample": 2.67
    },
    {
     "key": "duty_cycle_pct",
@@ -5389,7 +5477,7 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 14.2
+    "sample": 19.3
    },
    {
     "key": "state",
@@ -5432,14 +5520,14 @@
     "unit": "L/min",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 0.273
+    "sample": 0.278
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5514,6 +5602,7 @@
    "ограничить мощность",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5542,21 +5631,21 @@
     "unit": "L",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1416.1
+    "sample": 1410.5
    },
    {
     "key": "level_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 70.8
+    "sample": 70.5
    },
    {
     "key": "water_temp_c",
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 14.9
+    "sample": 22.1
    },
    {
     "key": "state",
@@ -5579,14 +5668,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.979
+    "sample": 0.966
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5613,6 +5702,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5634,14 +5724,14 @@
     "unit": "°C",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 9.6
+    "sample": 16.3
    },
    {
     "key": "humidity_pct",
     "unit": "%",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 85.1
+    "sample": 75.8
    },
    {
     "key": "illuminance_lux",
@@ -5655,29 +5745,29 @@
     "unit": "m/s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 6.7
+    "sample": 6.6
    },
    {
     "key": "wind_direction_deg",
     "unit": "°",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 54
+    "sample": 325
    },
    {
     "key": "wind_direction",
     "unit": null,
     "kind": "state",
     "trust": "sensor",
-    "sample": "NE",
-    "enum_hint": "NE"
+    "sample": "NW",
+    "enum_hint": "NW"
    },
    {
     "key": "pressure_hpa",
     "unit": "hPa",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 1009.6
+    "sample": 1014.9
    },
    {
     "key": "precipitation_mm_h",
@@ -5706,14 +5796,14 @@
     "unit": null,
     "kind": "measurement",
     "trust": "meta",
-    "sample": 0.967
+    "sample": 0.972
    },
    {
     "key": "updated_at",
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5744,6 +5834,7 @@
    "нет",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  },
  {
@@ -5765,21 +5856,21 @@
     "unit": "m/s",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 6.97
+    "sample": 6.31
    },
    {
     "key": "rpm",
     "unit": null,
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 431.0
+    "sample": 438.0
    },
    {
     "key": "power_w",
     "unit": "W",
     "kind": "measurement",
     "trust": "sensor",
-    "sample": 51.4
+    "sample": 28.8
    },
    {
     "key": "state",
@@ -5808,7 +5899,7 @@
     "unit": null,
     "kind": "meta",
     "trust": "meta",
-    "sample": 1791925200.0
+    "sample": 1792270800.0
    },
    {
     "key": "status",
@@ -5857,6 +5948,7 @@
    "выключить",
    ""
   ],
+  "data_source": "telemetry",
   "source": "dome_sandbox_nodes.md + telemetry.jsonl"
  }
 ]

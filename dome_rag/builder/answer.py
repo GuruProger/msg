@@ -1,15 +1,18 @@
-"""Сборка ответа: маршрутизация вопроса, структурные факты, цитаты, уверенность.
+"""Сборка ответа: карточки → проверка покрытия → калиброванная уверенность.
 
 Ответ всегда собирается в конверт:
 
-``facts`` / ``hypotheses`` / ``unknown`` / ``actions`` / ``citations`` / ``confidence``
+``verdict`` / ``facts`` / ``hypotheses`` / ``unknown`` / ``actions`` /
+``citations`` / ``confidence`` / ``cards``
 
-Это важнее «красивого текста»: агент должен видеть, что подтверждено, что
-является гипотезой, чего в базе нет и на что он опирается. Текст — лишь
-представление конверта.
+Главное отличие от v1: уверенность больше не выводится из «похожести
+фрагмента». Сначала проверяется, что найденная карточка привязана к субъекту и
+атрибуту вопроса (``coverage``), и только потом считается число. Поэтому
+частичный ответ не может выглядеть как уверенный, а вопрос вне корпуса
+получает ровно 0.0 и явный отказ.
 
-По умолчанию режим детерминированный. ``--llm`` добавляет пересказ через
-DeepSeek, но факты, цитаты и уверенность всё равно считаются здесь.
+Режим по умолчанию детерминированный. ``--llm`` добавляет пересказ через
+DeepSeek, но факты, цитаты, вердикт и уверенность всё равно считаются здесь.
 """
 from __future__ import annotations
 
@@ -19,12 +22,16 @@ import re
 import urllib.error
 import urllib.request
 
-from . import retrieval as ret
-from .retrieval import KB, _jload
+from . import coverage, taxonomy
+from .retrieval import KB
 
+# «Показания датчика» и «что показывает параметр» — это вопрос о смысле
+# величины, а не запрос живого значения. Раньше такие вопросы помечались как
+# LIVE, и в факты добавлялась строка про снимок телеметрии, хотя человек
+# спрашивал совсем о другом. Живой запрос — это явное «сейчас/текущее».
 LIVE_MARKERS = (
     "сейчас", "текущ", "в реальном времени", "прямо сейчас", "онлайн",
-    "показыва", "показани", "статус", "состояни",
+    "в данный момент", "live snapshot", "снимок телеметри",
 )
 DIAG_MARKERS = (
     "не работает", "не включа", "не запуска", "ошибк", "отказ", "почему",
@@ -40,16 +47,11 @@ POLICY_MARKERS = (
     "обязан", "допустимо", "безопасно ли", "имеет ли право", "нужно ли",
 )
 
-NO_DATA_MARKERS = (
-    "пароль", "серийный номер", "серийник", "wi-fi", "wifi", "телефон",
-    "почтовый адрес", "домашний адрес", "стоимость", "цена", "сколько стоит",
-    "сколько человек", "состав экипажа", "прогноз на завтра", "погода на марсе",
-    "госномер", "инвентарный номер",
-)
-
 
 def classify(question: str) -> str:
     q = question.lower()
+    if any(m in q for m in LIVE_MARKERS):
+        return "LIVE"
     if any(m in q for m in DIAG_MARKERS):
         return "DIAGNOSTIC"
     if any(m in q for m in LIVE_MARKERS):
@@ -71,95 +73,241 @@ def _fmt_value(value) -> str:
     return str(value)
 
 
-def _node_facts(node: dict) -> tuple[list[str], list[str]]:
-    facts, unknown = [], []
-    facts.append(f"{node['title']} (`{node['node_id']}`), система: {node.get('system_ru') or node.get('system')}")
-    measurements = [p for p in node["params"] if p["kind"] in ("measurement", "computed")]
-    states = [p for p in node["params"] if p["kind"] == "state"]
-    for p in measurements[:6]:
-        unit = f" {p['unit']}" if p.get("unit") else ""
-        facts.append(f"параметр `{p['key']}`{unit}")
-    if states:
-        facts.append("состояния: " + ", ".join(f"`{p['key']}`" for p in states[:8]))
-    if node["controls"]:
-        parts = []
-        for c in node["controls"]:
-            who = "только Оператор" if c.get("allowed_for") == "operator" else "агент"
-            confirmed = "" if c.get("api_confirmed") else " — не подтверждено в API"
-            parts.append(f"`{c['action']}` ({c['label']}; {who}{confirmed})")
-        facts.append("команды: " + "; ".join(parts[:8]))
-    else:
-        unknown.append(f"у узла `{node['node_id']}` нет управляющих команд в API — только чтение.")
-    return facts, unknown
+def _clean(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
-def _gap_facts(gaps: list[dict]) -> tuple[list[str], list[str]]:
-    facts, unknown = [], []
-    for g in gaps:
-        unknown.append(f"{g['id']}: {g['description']}")
-        if g.get("conflict"):
-            facts.append(f"Конфликт {g['id']}: {g['conflict']}")
-        if g.get("resolution"):
-            facts.append(f"Как закрыть {g['id']}: {g['resolution']}")
-    return facts, unknown
+def _clip(text: str, limit: int) -> str:
+    text = _clean(text)
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def _build_text(question: str, intent: str, facts: list[str], hypotheses: list[str],
-                unknown: list[str], actions: list[str], citations: list[dict],
-                chunks: list[dict], confidence: dict) -> str:
-    lines = []
-    if not chunks and not facts:
-        lines.append("В базе знаний нет достаточных данных, чтобы ответить на этот вопрос.")
-        if unknown:
-            lines.append("")
-            lines.append("Чего не хватает:")
-            for u in unknown:
-                lines.append(f"- {u}")
-        lines.append("")
-        lines.append("Что можно сделать:")
-        lines.append("1. Уточнить вопрос или назвать узел/идентификатор (`IL_CO2`, `F-1.7`, `E07`).")
-        lines.append("2. Запросить текущее состояние через живой API (`py kb.py live snapshot`).")
-        lines.append("3. Спросить Оператора через `meeting_01`.")
-        return "\n".join(lines)
+def _split_steps(value: str) -> list[str]:
+    parts = re.split(r";\s*(?=\d+\))", value)
+    if len(parts) <= 1:
+        parts = re.split(r";\s*", value)
+    return [_clean(part) for part in parts if _clean(part)][:12]
 
-    lines.append(f"Вопрос: {question}")
-    lines.append(f"Тип: {intent}. Уверенность: {confidence['level']} ({confidence['score']:.2f}).")
+
+ACTION_ATTRIBUTES = {"procedure_steps", "fault_action"}
+HYPOTHESIS_STATUS = {"catalog", "theory", "hypothesis", "opinion"}
+UNSAFE_RESET = re.compile(
+    r"(?:блокир\w*\s+тревог|отмен\w*\s+отключен|"
+    r"(?:отключ|сброс|обход|снят)\w*[^.;]{0,35}(?:защит|блокиров|интерлок)|"
+    r"block_interlock|block_automation|set_thresholds)", re.I,
+)
+
+
+def _incident_decision(question: str) -> bool:
+    """A supplied observation cannot prove a false alarm or grant a reset."""
+    q = question.casefold()
+    observation = bool(re.search(r"\d+\s*(?:ppm|ппм|%)|датчик\w*\s+показыва", q))
+    decision = bool(re.search(r"ложн|фейк|сброс|снят|отключ.*защит|достаточно|недостовер", q))
+    return observation and decision
+MAX_FACTS = 6
+MAX_HYPOTHESES = 4
+MAX_ACTIONS = 8
+
+
+def _order_cards(cards: list[dict], slots) -> list[dict]:
+    """Прямой ответ — первым, затем главный слот, затем остальные.
+
+    Порядок внутри ``assessment.cards`` уже ставит карточку с прямым
+    доказательством первой. Раньше ``_order_cards`` сортировал только по
+    атрибуту, и карточка «Залипание на последнем значении» (тот же атрибут
+    ``fault_action``) обгоняла точную процедуру «Потеря телеметрии узла».
+    """
+    wanted = set(slots.attributes or [])
+    primary = slots.primary
+    first_id = cards[0].get("card_id") if cards else None
+
+    def key(card: dict) -> tuple:
+        attribute = card.get("attribute")
+        rank = (
+            0 if card.get("card_id") == first_id
+            else 1 if attribute == primary
+            else 2 if attribute in wanted
+            else 3
+        )
+        return (rank, -float(card.get("score") or 0.0), card.get("card_id") or "")
+
+    return sorted(cards, key=key)
+
+
+def _keep_card(card: dict, best: dict) -> bool:
+    """Оставить карточку, которая действительно относится к вопросу.
+
+    ``assessment.cards`` — это пул покрытия, а не готовый список фактов: в нём
+    могут оказаться соседние карточки того же семейства (например, все
+    параметры датчика на вопрос «что делать при потере телеметрии»). Фильтр
+    опирается на оси покрытия, а не на порядок.
+    """
+    if card is best:
+        return True
+    if card.get("canonical_id") and card.get("canonical_id") == best.get("canonical_id"):
+        return True
+    # Тот же порог/интерлок/код: карточка-последствие и карточка-порог
+    # описывают один и тот же факт с разных сторон.
+    if set(card.get("codes") or []) & set(best.get("codes") or []):
+        return True
+    cov = card.get("_coverage") or {}
+    subject = float(cov.get("subject") or 0)
+    entity = float(cov.get("entity") or 0)
+    code = float(cov.get("code") or 0)
+    phrase = float(cov.get("phrase") or 0)
+    lexical = float(cov.get("lexical") or 0)
+    # Два разных определения не заменяют друг друга. Вопрос «какие системы
+    # входят в Купол» — это FAQ о составе, а не «какие зоны доступа есть в
+    # Куполе». Раньше соседний FAQ попадал в факты только потому, что в его
+    # тексте тоже встречалось слово «системы».
+    if card.get("attribute") == "definition" and best.get("attribute") == "definition":
+        if subject < 0.45:
+            return False
+    # Определение — самостоятельный ответ. Правило или процедура того же
+    # текста уместны только при совпадении субъекта, иначе «какие системы
+    # входят в Купол» подкреплялось правилом «при ухудшении связи» лишь
+    # потому, что там встретилось слово «компоненты».
+    if (
+        best.get("attribute") == "definition"
+        and card.get("attribute") in {"policy_rule", "fault_forbidden", "procedure_steps"}
+        and subject < 0.45
+    ):
+        return False
+    return bool(
+        code >= 0.99
+        or phrase >= 0.35
+        or (subject >= 0.75 and lexical >= 0.10)
+        or entity >= 0.85
+        or (entity >= 0.55 and lexical >= 0.30)
+    )
+
+
+
+def _status_note(card: dict) -> str:
+    status = card.get("status")
+    if status == "catalog":
+        return "каталог отказов описывает возможный отказ, а не доказанный факт"
+    if status == "theory":
+        return "теоретический/справочный материал"
+    if status == "hypothesis":
+        return "гипотеза, требующая проверки"
+    if status == "opinion":
+        return "мнение из журнала, не подтверждённый факт"
+    if status == "history":
+        return "запись истории"
+    if status == "incomplete":
+        return "источник неполный (например, DOCX без текстового слоя)"
+    if status == "conflict":
+        return "источники противоречат друг другу"
+    return ""
+
+
+def _card_citation(card: dict) -> dict:
+    source = card.get("source") or {}
+    return {
+        "kind": "card",
+        "card_id": card["card_id"],
+        "source": source.get("doc") or "—",
+        "title": source.get("title") or card.get("subject_label"),
+        "line": source.get("line"),
+        "canonical_id": card.get("canonical_id"),
+        "attribute": card.get("attribute"),
+        "status": card.get("status"),
+        "score": card.get("score"),
+        "text": _clip(card.get("value"), 300),
+    }
+
+
+def _build_text(
+    question: str,
+    result: dict,
+    confidence: dict,
+    assessment,
+) -> str:
+    verdict = result["verdict"]
+    lines = [f"Вопрос: {question}", f"Вердикт: {verdict}. "
+             f"Уверенность: {confidence['level']} ({confidence['score']:.2f})."]
+    if assessment.slots.attributes:
+        lines.append(
+            "Разбор вопроса: объект — "
+            + (", ".join(assessment.slots.entities + assessment.slots.codes) or "не указан конкретный")
+            + "; атрибут — "
+            + ", ".join(taxonomy.label(a) for a in assessment.slots.attributes)
+        )
     lines.append("")
 
-    if facts:
+    if verdict == coverage.NO_RELEVANT_EVIDENCE:
+        lines.append("В корпусе нет достаточных сведений, чтобы ответить на этот вопрос.")
+        if assessment.slots.off_domain:
+            lines.append(
+                "Запрошенный тип данных ("
+                + ", ".join(taxonomy.label(a) for a in assessment.slots.attributes)
+                + ") в корпусе не описан."
+            )
+        if result["unknown"]:
+            lines.append("")
+            lines.append("Чего не хватает:")
+            for item in result["unknown"]:
+                lines.append(f"- {item}")
+        lines.append("")
+        lines.append("Что можно сделать:")
+        for i, action in enumerate(result["actions"] or [
+            "Уточнить вопрос или назвать узел/идентификатор (`IL_CO2`, `F-1.7`, `E07`).",
+            "Запросить текущее состояние через живой API (`py kb.py live snapshot`).",
+            "Спросить Оператора через `meeting_01`.",
+        ], 1):
+            lines.append(f"{i}. {action}")
+        return "\n".join(lines).strip()
+
+    if result.get("reference_facts"):
+        lines.append("Справочные сведения (не текущие измерения):")
+        lines.extend(f"- {item}" for item in result["reference_facts"])
+        lines.append("")
+    if result["facts"]:
         lines.append("Подтверждённые сведения:")
-        for f in facts:
-            lines.append(f"- {f}")
+        for item in result["facts"]:
+            lines.append(f"- {item}")
         lines.append("")
-    if hypotheses:
-        lines.append("Гипотезы (не подтверждено):")
-        for h in hypotheses:
-            lines.append(f"- {h}")
+    if result["hypotheses"]:
+        lines.append("Гипотезы и каталожные описания (не доказательство факта):")
+        for item in result["hypotheses"]:
+            lines.append(f"- {item}")
         lines.append("")
-    if unknown:
-        lines.append("Чего не хватает / что неизвестно:")
-        for u in unknown:
-            lines.append(f"- {u}")
+    if result["unknown"]:
+        lines.append("Ограничения и неизвестное:")
+        for item in result["unknown"]:
+            lines.append(f"- {item}")
         lines.append("")
-    if actions:
+    if result["actions"]:
         lines.append("Что делать:")
-        for i, a in enumerate(actions, 1):
-            lines.append(f"{i}. {a}")
+        for i, item in enumerate(result["actions"], 1):
+            lines.append(f"{i}. {item}")
         lines.append("")
-    if chunks:
-        lines.append("Ближайшие фрагменты корпуса:")
-        for c in chunks[:4]:
-            canon = f" [{c['canonical_id']}]" if c.get("canonical_id") else ""
-            lines.append(f"- {c['doc']} → {c['title']}{canon} (score {c['score']:.2f})")
-        lines.append("")
-    if citations:
+    if result["citations"]:
         lines.append("Источники:")
-        for c in citations[:6]:
-            lines.append(f"- {c['source']}" + (f" — {c['title']}" if c.get("title") else ""))
+        for citation in result["citations"][:8]:
+            suffix = f" — {citation['title']}" if citation.get("title") else ""
+            attr = f" [{citation.get('attribute')}]" if citation.get("attribute") else ""
+            lines.append(f"- {citation['source']}{suffix}{attr}")
+        lines.append("")
+    lines.append("Проверка покрытия: " + assessment.reason + ".")
     return "\n".join(lines).strip()
 
 
-def _call_deepseek(question: str, context: str, facts: list[str]) -> str | None:
+def _short_answer(result: dict) -> str:
+    """Одна фраза для быстрого показа агенту и человеку."""
+    if result["verdict"] == coverage.NO_RELEVANT_EVIDENCE:
+        return "В корпусе нет достаточных сведений, чтобы ответить на этот вопрос."
+    if result["actions"]:
+        return _clip("; ".join(result["actions"][:2]), 360)
+    if result["facts"]:
+        return _clip(result["facts"][0], 360)
+    if result["hypotheses"]:
+        return _clip(result["hypotheses"][0], 360)
+    return ""
+
+
+def _call_deepseek(question: str, context: str, facts: list[str], verdict: str) -> str | None:
     key = os.environ.get("DEEPSEEK_API_KEY")
     if not key:
         return None
@@ -170,7 +318,8 @@ def _call_deepseek(question: str, context: str, facts: list[str]) -> str | None:
         "Используй ТОЛЬКО предоставленный контекст. Если данных нет — прямо скажи, чего не хватает. "
         "Различай каталог отказов (описание возможного) и подтверждённый факт (запись истории/журнала). "
         "Не выдумывай значения телеметрии: живые данные в контекст не входят. "
-        "Физические действия выполняет только Оператор. success:true означает приём команды, а не её выполнение."
+        "Физические действия выполняет только Оператор. success:true означает приём команды, а не её выполнение. "
+        f"Вердикт проверки покрытия: {verdict}. Не повышай его: если PARTIAL или CONFLICT — скажи об этом."
     )
     user = (
         f"Вопрос: {question}\n\n"
@@ -202,319 +351,226 @@ def _call_deepseek(question: str, context: str, facts: list[str]) -> str | None:
 def answer(question: str, kb: KB, use_llm: bool = False, k: int = 8) -> dict:
     question = (question or "").strip()
     intent = classify(question)
-    no_data = [m for m in NO_DATA_MARKERS if m in question.lower()]
-    qlow = question.lower()
-    line_focus = any(w in qlow for w in ("линия", "линии", "щит", "smart_panel"))
-    chunks = kb.search(question, k=k)
+    entities = kb.detect_entities(question)
+    slots = coverage.extract_slots(question, entities=entities)
+    # Пул кандидатов не должен зависеть от того, сколько карточек просили
+    # показать: иначе один и тот же вопрос получает ANSWERABLE при k=8 и
+    # PARTIAL при k=5. Верхняя граница вывода (k) — это оформление, а не
+    # доказательная база.
+    retrieved = kb.search_cards(question, k=max(24, k * 2), slots=slots)
+    assessment = coverage.assess(
+        question, retrieved, slots=slots, entities=entities, all_cards=kb.cards
+    )
+    confidence = coverage.confidence_for(assessment)
+
+    cards = assessment.cards[:k] if assessment.verdict != coverage.NO_RELEVANT_EVIDENCE else []
+    cards = _order_cards(cards, assessment.slots)
+    if cards:
+        cards = [c for c in cards if _keep_card(c, cards[0])] or cards
+    # Абзац без привязки к атрибуту — контекст, а не ответ. Показываем его
+    # только если ничего лучше не нашлось.
+    answer_cards = [
+        c for c in cards
+        if c.get("attribute") != "section_text"
+        or (cards and c.get("card_id") == cards[0].get("card_id"))
+    ] or cards
 
     facts: list[str] = []
     hypotheses: list[str] = []
     unknown: list[str] = []
     actions: list[str] = []
     citations: list[dict] = []
-    structured_hits = 0
-
-    # ---------------------------------------------------------------- чанки
-    for c in chunks[:5]:
-        citations.append(
-            {
-                "kind": "chunk",
-                "source": c["doc"],
-                "title": c["title"],
-                "chunk_id": c["chunk_id"],
-                "canonical_id": c.get("canonical_id"),
-                "score": c["score"],
-                "verification_status": c["verification_status"],
-            }
-        )
-        if c["verification_status"] == "logbook_opinion":
-            hypotheses.append(f"Запись журнала (мнение жильца, не факт): {c['text'][:220]}")
-        elif c["has_gaps"]:
-            unknown.append(f"«{c['title']}» содержит незаполненные места — нельзя опираться как на полный источник.")
-
-    # ---------------------------------------------------------------- узлы
-    nodes = kb.find_nodes(question)
-    if re.search(r"\bIL_[A-Z0-9_]+\b", question.upper()):
-        preferred = [n for n in nodes if n["node_id"] == "dome_automation_01"]
-        if preferred:
-            nodes = preferred
-    has_controls = False
-    for node in nodes:
-        f, u = _node_facts(node)
-        facts += f
-        unknown += u
-        structured_hits += 1
-        citations.append(
-            {
-                "kind": "structured",
-                "source": f"data/nodes.json#{node['node_id']}",
-                "title": node["title"],
-            }
-        )
-        if intent == "LIVE":
-            facts.append(
-                "Фактическое значение в базе не хранится: телеметрия запрашивается у живого API. "
-                f"Запрос: `{{\"type\":\"query\",\"node_id\":\"{node['node_id']}\",\"query\":\"...\"}}` "
-                "или снимок `py kb.py live snapshot`."
-            )
-        if node["controls"]:
-            has_controls = True
-        if any(c.get("allowed_for") == "operator" for c in node["controls"]):
-            actions.append("Часть действий доступна только Оператору — запросить через `meeting_01`.")
-    if has_controls:
-        actions.append(
-            "Перед каждой командой читать состояние, после — проверять `verify_by`: "
-            "`success:true` означает приём команды, а не её исполнение."
-        )
-    if intent == "LIVE" and not nodes:
-        facts.append(
-            "Живое значение в базе не хранится: температура, влажность и другие "
-            "показания запрашиваются у телеметрии — `py kb.py live snapshot`."
-        )
-    node_ids = {n["node_id"] for n in nodes}
-    generic_machine = any(
-        w in qlow for w in ("станк", "оборудован", "производств", "техник")
+    seen: set[str] = set()
+    # Вопрос-сравнение («чем отличается A от B») просит сами описания A и B,
+    # а не гипотезу о них. Поэтому каталожные карточки обеих сторон попадают
+    # в факты (с честной пометкой о статусе), иначе одна сторона оказывалась
+    # в фактах, а вторая — только в гипотезах.
+    comparison = "comparison" in (assessment.slots.attributes or [])
+    action_requested = assessment.slots.primary in ACTION_ATTRIBUTES or bool(
+        answer_cards and answer_cards[0].get("attribute") in ACTION_ATTRIBUTES
     )
-
-    def _mentions_nodes(text: str, ids: set[str]) -> bool:
-        return bool(ids & set(kb.alias_index.detect(text)))
-
-    # ---------------------------------------------------------- интерлоки
-    for il in kb.interlocks_for(question):
-        if il.get("_score", 0) < 0.2 and il["id"].upper() not in question.upper():
-            continue
-        affected = set(il.get("affected", []))
-        if (
-            node_ids and affected and not (affected & node_ids)
-            and "production" not in affected and not generic_machine
-        ):
-            continue
-        structured_hits += 1
-        facts.append(
-            f"{il['id']} «{il['title']}»: условие — {il.get('condition')}; "
-            f"эффект — {il.get('effect')}; снятие — {il.get('clear_rule')}"
-        )
-        citations.append({"kind": "structured", "source": il.get("source") or "data/curated/interlocks.json",
-                          "title": il["id"]})
-
-    # ------------------------------------------------------------- пороги
-    for t in kb.thresholds_for(question):
-        if t.get("_score", 0) < 0.3:
-            continue
-        if line_focus and t.get("area") not in ("power", "energy"):
-            continue
-        if node_ids and not generic_machine:
-            mentioned = set(kb.alias_index.detect(f"{t.get('metric')} {t.get('effect')}"))
-            if mentioned and not (mentioned & node_ids):
-                continue
-        structured_hits += 1
-        facts.append(
-            f"{t['id']}: `{t['metric']}` {t['op']} {_fmt_value(t['value'])}"
-            + (f" в течение {t['for_s']} с" if t.get("for_s") else "")
-            + (f" (окно {t['window_s']} с)" if t.get("window_s") else "")
-            + f" → {t.get('effect') or 'без описания эффекта'}"
-            + ("" if t.get("status") == "confirmed" else f" [статус: {t.get('status')}]")
-        )
-        citations.append({"kind": "structured", "source": t.get("source") or "data/curated/thresholds.json",
-                          "title": t["id"]})
-
-    # ------------------------------------------------------------- отказы
-    explicit_fault = re.search(r"\bF-?\d+\.\d+\b", question.upper())
-    want_faults = intent == "DIAGNOSTIC" or explicit_fault or any(
-        w in question.lower() for w in ("отказ", "ошибк", "не работает", "не включа")
-    )
-    failure_words = ("не работает", "останов", "прекрат", "ошиб", "отказ",
-                     "не включа", "не запуска", "пауза", "авари", "сбой")
-    faults = kb.faults_for(question) if want_faults else []
-    if explicit_fault:
-        faults = faults[:1]
-    else:
-        kept = []
-        for f in faults:
-            body = " ".join(str(f.get(x) or "") for x in
-                            ("title", "what_happens", "how_to_notice", "must_not"))
-            if f.get("_score", 0) < 0.45:
-                continue
-            if node_ids and not _mentions_nodes(body, node_ids):
-                continue
-            if any(w in qlow for w in ("не работает", "не включа", "не запуска")) and not any(
-                w in body.lower() for w in failure_words
-            ):
-                continue
-            kept.append(f)
-        faults = kept[:2]
-    for f in faults:
-        structured_hits += 1
-        facts.append(
-            f"Каталог {f['id']} «{f['title']}» (категория: {f.get('category')}; наблюдаемость: {f.get('observability')}). "
-            + (f"Что происходит: {f['what_happens']} " if f.get("what_happens") else "")
-            + (f"Как заметить: {f['how_to_notice']} " if f.get("how_to_notice") else "")
-        )
-        if f.get("agent_action"):
-            facts.append(f"Что может агент ({f['id']}): {f['agent_action']}")
-        if f.get("human_action"):
-            actions.append(f"{f['id']}: {f['human_action']}")
-        if f.get("must_not"):
-            actions.append(f"{f['id']} — чего нельзя допустить: {f['must_not']}")
-        citations.append({"kind": "structured", "source": f.get("source") or "09_faults.md", "title": f["id"]})
-    if faults:
-        unknown.append("Запись каталога описывает возможный отказ и не доказывает, что он происходил на станции.")
-
-    # --------------------------------------------------------- диагностика
-    diags = kb.diagnostics_for(question) if intent == "DIAGNOSTIC" else []
-    if node_ids and diags:
-        diags = [
-            d for d in diags
-            if _mentions_nodes(
-                " ".join(str(d.get(x) or "") for x in ("title", "observation", "next_steps")),
-                node_ids,
-            )
-        ]
-    for d in diags:
-        structured_hits += 1
-        facts.append(f"Сценарий {d['id']} «{d['title']}» (система: {d.get('system')}).")
-        if d.get("observation"):
-            facts.append(f"Что видно: {d['observation']}")
-        for i, ch in enumerate(d.get("checks", [])[:8], 1):
-            actions.append(f"{d['id']} проверка {i}: {ch}")
-        for h in d.get("hypotheses", [])[:6]:
-            hypotheses.append(f"{d['id']}: {h}")
-        citations.append({"kind": "structured", "source": d.get("source") or "diagnostics", "title": d["id"]})
-
-    # ---------------------------------------------------------- процедуры
-    if any(w in question.lower() for w in ("как ", "запуст", "выполн", "порядок", "инструкц", "шаг")):
-        for p in kb.procedures_for(question):
-            structured_hits += 1
-            facts.append(f"Процедура «{p['title']}» (`{p['id']}`).")
-            for pre in p.get("preconditions", [])[:6]:
-                if isinstance(pre, str):
-                    try:
-                        pre = json.loads(pre)
-                    except json.JSONDecodeError:
-                        pass
-                if isinstance(pre, dict):
-                    facts.append(f"Предусловие: {pre.get('check')}" + (f"; иначе: {pre['else']}" if pre.get("else") else ""))
-                else:
-                    facts.append(f"Предусловие: {pre}")
-            for i, s in enumerate(p.get("steps", [])[:12], 1):
-                actions.append(f"{p['id']} шаг {i}: {s}")
-            for f in p.get("forbidden", [])[:6]:
-                actions.append(f"Запрещено: {f}")
-            citations.append({"kind": "structured", "source": p.get("source") or "procedures", "title": p["id"]})
-
-    # ------------------------------------------------------------ политики
-    if intent in ("POLICY", "LIVE") or (nodes and intent == "DIAGNOSTIC"):
-        kept_policies = 0
-        for p in kb.policies_for(question):
-            if p.get("match", 0) < 0.5:
-                continue
-            kept_policies += 1
-            if kept_policies > 2:
-                break
-            structured_hits += 1
-            facts.append(f"{p['id']} ({p['scope']}): {p['rule']}" + (f" → {p['action']}" if p.get("action") else ""))
-            citations.append({"kind": "structured", "source": p.get("source") or "data/curated/policies.json",
-                              "title": p["id"]})
-
-    # --------------------------------------------------------------- пробелы
-    gaps = [g for g in kb.gaps_for(question, k=3) if g.get("match", 0) >= 0.5][:2]
-    if node_ids and not line_focus:
-        systems = {n["system"] for n in nodes}
-        gaps = [
-            g for g in gaps
-            if g.get("area") in systems or g.get("area") == "terminology" or g["id"] == "GAP-001"
-        ]
-    if line_focus or any(n["node_id"] == "smart_panel_01" for n in nodes):
-        g1 = next((g for g in kb.all_gaps() if g["id"] == "GAP-001"), None)
-        if g1 and all(g["id"] != "GAP-001" for g in gaps):
-            gaps.insert(0, g1)
-    if gaps:
-        gf, gu = _gap_facts(gaps)
-        structured_hits += 1
-        for g in gaps:
-            citations.append({"kind": "structured", "source": g.get("source") or "data/curated/gaps.json",
-                              "title": g["id"]})
-        if any(g["id"] == "GAP-001" for g in gaps):
-            # прямой ответ важнее описания узлов: убираем шум параметров и чужие пороги
-            facts = [
-                f for f in facts
-                if not f.startswith(("параметр ", "состояния:", "команды:"))
-                and not f.startswith(("TH_CO2", "TH_CONDENSATE", "TH_RESUME", "TH_CHAT"))
-            ]
-            facts = gf + facts
-            unknown = gu + unknown
-        else:
-            facts += gf
-            unknown += gu
-
-    # ------------------------------------------------------------- глоссарий
-    if not nodes and not faults and intent == "REFERENCE" and not no_data:
-        for g in kb.glossary_for(question):
-            if g.get("_score", 0) >= 0.2:
-                facts.append(f"«{g['term']}»: {g['definition']}")
-                citations.append({"kind": "structured", "source": g.get("source") or "11_reference.md",
-                                  "title": g["term"]})
-                structured_hits += 1
-
-    # ------------------------------------------------------- честный отказ
-    if no_data:
-        # Вопрос вне корпуса: не показываем случайные фрагменты как «факты».
-        facts = []
-        hypotheses = []
-        actions = []
-        citations = []
-        chunks = []
-        structured_hits = 0
-        unknown = ["В корпусе нет сведений: " + ", ".join(no_data) + "."]
-
-    # ------------------------------------------------------------ уверенность
-    top_score = chunks[0]["score"] if chunks else 0.0
-    score = 0.15 + 0.45 * min(1.0, top_score * 1.5) + 0.05 * min(6, structured_hits)
-    if unknown:
-        score = min(score, 0.68)
-    if no_data:
-        score = 0.3
-    if not chunks and structured_hits == 0 and not no_data:
-        score = 0.05
-    score = round(min(0.95, score), 2)
-    level = "high" if score >= 0.75 else "medium" if score >= 0.45 else "low"
-    abstained = (not chunks and structured_hits == 0) or bool(no_data)
-    confidence = {
-        "score": score,
-        "level": level,
-        "reason": (
-            f"лучший фрагмент {top_score:.2f}, структурных попаданий {structured_hits}, "
-            f"пробелов/неизвестного {len(unknown)}"
-        ),
+    # У одной стороны сравнения может быть и заголовок, и подробное описание.
+    # Подробное описание полезнее: заголовок «F-1.2 — Ложное занижение» лишь
+    # повторяет название, если рядом уже есть симптом/причина того же отказа.
+    rich_sides = {
+        str(card.get("canonical_id"))
+        for card in answer_cards
+        if card.get("attribute") in {
+            "fault_symptom", "fault_cause", "threshold_value",
+            "interlock_trigger", "interlock_effect",
+        }
     }
 
+    def add(bucket: list[str], text: str) -> bool:
+        text = _clean(text)
+        if text and text not in seen:
+            seen.add(text)
+            bucket.append(text)
+            return True
+        return False
+
+    for card in answer_cards:
+        value = _clean(card.get("value"))
+        if not value:
+            continue
+        status = card.get("status")
+        attribute = card.get("attribute")
+        if (
+            comparison
+            and attribute == "definition"
+            and str(card.get("canonical_id") or "") in rich_sides
+        ):
+            continue
+        label = card.get("subject_label") or card.get("subject") or ""
+        prefix = f"{label}: " if label else ""
+        note = _status_note(card)
+        line = prefix + value
+        used = False
+
+        if attribute in ACTION_ATTRIBUTES:
+            if not action_requested:
+                continue
+            # Catalog entries describe possible incidents. They are not an
+            # authorized response to the incident currently being discussed.
+            if status in {"normative", "reference"} and len(actions) < MAX_ACTIONS:
+                for step in _split_steps(value):
+                    if len(actions) >= MAX_ACTIONS:
+                        break
+                    if UNSAFE_RESET.search(step):
+                        used = add(unknown, "Источник упоминает изменение защит. Это не разрешение на действие; нужна проверка политики и условий.") or used
+                    else:
+                        used = add(actions, step) or used
+            if status in HYPOTHESIS_STATUS and len(hypotheses) < MAX_HYPOTHESES:
+                used = add(hypotheses, line + (f" ({note})" if note else "")) or used
+        elif attribute in {"policy_rule", "fault_forbidden", "procedure_precondition"}:
+            if status in HYPOTHESIS_STATUS and len(hypotheses) < MAX_HYPOTHESES:
+                used = add(hypotheses, line + (f" ({note})" if note else ""))
+            elif len(facts) < MAX_FACTS:
+                used = add(facts, line)
+        elif status in HYPOTHESIS_STATUS and not (
+            comparison
+            and attribute in {"definition", "fault_symptom", "fault_cause"}
+        ) and len(hypotheses) < MAX_HYPOTHESES:
+            used = add(hypotheses, line + (f" ({note})" if note else ""))
+        elif status in {"incomplete", "conflict"}:
+            used = add(unknown, line + (f" ({note})" if note else ""))
+        elif len(facts) < MAX_FACTS:
+            used = add(facts, line + (f" ({note})" if note else ""))
+
+        # Цитируем только те карточки, чьё утверждение реально попало в ответ.
+        if used:
+            citations.append(_card_citation(card))
+
+    # Ограничения, которые важны для правильного чтения ответа.
+    if assessment.missing:
+        unknown.append(
+            "не найден прямой ответ по атрибуту: "
+            + ", ".join(taxonomy.label(a) for a in assessment.missing)
+        )
+    if assessment.fallback:
+        unknown.append(
+            "прямого описания запрошенного эффекта нет; показаны связанные правила и условия."
+        )
+    for conflict in assessment.conflicts:
+        unknown.append(
+            f"конфликт {conflict['id']}: {_clip(conflict.get('description') or '', 240)}"
+        )
+    if any(c.get("has_gaps") or c.get("status") == "incomplete" for c in cards):
+        unknown.append(
+            "часть источников неполная (пометки [ЗАПОЛНИТЬ] или DOCX без OCR) — "
+            "нельзя считать ответ исчерпывающим."
+        )
+    if assessment.verdict == coverage.CONFLICT:
+        actions.append("Сверить конфликтующие источники с Оператором и живой телеметрией.")
+    if assessment.verdict == coverage.PARTIAL and not actions:
+        if assessment.missing:
+            actions.append("Уточнить вопрос или проверить недостающие данные у Оператора.")
+        else:
+            actions.append(
+                "Сверить запись с журналом или живой телеметрией: "
+                "второго подтверждающего источника нет."
+            )
+
+    if assessment.verdict == coverage.NO_RELEVANT_EVIDENCE:
+        facts, hypotheses, actions, citations = [], [], [], []
+        if assessment.slots.off_domain:
+            unknown.append(
+                "в корпусе нет сведений по теме: "
+                + ", ".join(taxonomy.label(a) for a in assessment.slots.attributes)
+            )
+        else:
+            unknown.append(assessment.reason + ".")
+    elif not cards:
+        unknown.append("карточки не найдены")
+
+    reference_facts = []
+    requires_verification = _incident_decision(question)
+    if intent == "LIVE":
+        reference_facts, facts = facts, []
+        unknown.insert(0, "Текущее значение не установлено: в RAG нет свежего снимка телеметрии. Справочные пороги не являются показаниями датчика.")
+        actions = ["Получить свежую телеметрию через API и проверить время, узел и качество измерения."]
+        if assessment.verdict != coverage.NO_RELEVANT_EVIDENCE:
+            assessment.verdict = coverage.PARTIAL
+        assessment.reason = "Для ответа нужно текущее измерение; справочная база его не содержит"
+        assessment.missing = list(dict.fromkeys(assessment.missing + ["live_telemetry"]))
+        confidence = {**confidence, "score": 0.0, "level": "low"}
+    if requires_verification:
+        unknown.insert(0, "Расхождение показаний само по себе не доказывает ложную тревогу. Нужны свежесть, зона и независимые подтверждения; сброс защит не разрешён этим ответом.")
+        actions = ["Сопоставить время, зону и независимые датчики; сохранить защитное состояние до выяснения причины."]
+        if assessment.verdict == coverage.ANSWERABLE:
+            assessment.verdict = coverage.PARTIAL
+        assessment.reason = "Каталог отказов не подтверждает причину текущего инцидента"
+        confidence = {**confidence, "score": min(float(confidence.get("score", 0)), 0.35), "level": "low"}
+
+    confidence.update(verdict=assessment.verdict, reason=assessment.reason)
     result = {
         "question": question,
         "intent": intent,
-        "abstained": abstained,
+        "verdict": assessment.verdict,
+        "abstained": assessment.verdict == coverage.NO_RELEVANT_EVIDENCE,
+        "requires_live": intent == "LIVE",
+        "requires_verification": requires_verification,
+        "reference_facts": reference_facts,
         "facts": list(dict.fromkeys(facts)),
         "hypotheses": list(dict.fromkeys(hypotheses)),
         "unknown": list(dict.fromkeys(unknown)),
         "actions": list(dict.fromkeys(actions)),
         "citations": citations,
         "confidence": confidence,
-        "chunks": chunks[:5],
+        "coverage": assessment.as_dict(),
+        "cards": cards,
+        "chunks": [
+            {
+                "chunk_id": card.get("chunk_id"),
+                "doc": (card.get("source") or {}).get("doc"),
+                "title": (card.get("source") or {}).get("title"),
+                "text": card.get("text"),
+                "score": card.get("score"),
+                "canonical_id": card.get("canonical_id"),
+                "verification_status": card.get("status"),
+                "has_gaps": card.get("has_gaps"),
+            }
+            for card in cards
+        ],
         "mode": "deterministic",
     }
-    result["answer"] = _build_text(
-        question, intent, result["facts"], result["hypotheses"], result["unknown"],
-        result["actions"], citations, chunks[:5], confidence,
-    )
+    result["short_answer"] = _short_answer(result)
+    result["answer"] = _build_text(question, result, confidence, assessment)
 
-    if use_llm:
-        context = "\n\n".join(f"[{c['doc']} :: {c['title']}]\n{c['text'][:1800]}" for c in chunks[:6])
-        text = _call_deepseek(question, context, result["facts"])
+    if use_llm and not (result["requires_live"] or requires_verification or result["abstained"]):
+        context = "\n\n".join(
+            f"[{card['source'].get('doc')} :: {card['source'].get('title')}]\n{card.get('text')}"
+            for card in cards[:8]
+        )
+        text = _call_deepseek(question, context, result["facts"], assessment.verdict)
         if text:
             result["answer"] = text
             result["mode"] = "llm+deterministic"
         else:
             result["mode"] = "deterministic (LLM недоступна)"
-            result["unknown"].append("LLM-режим запрошен, но ключ/сеть недоступны — показан детерминированный ответ.")
+            result["unknown"].append(
+                "LLM-режим запрошен, но ключ/сеть недоступны — показан детерминированный ответ."
+            )
 
     return result
 

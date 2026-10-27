@@ -1,81 +1,159 @@
 [
- {"id":"P-PRINT-START","title":"Запуск печати на 3D-принтере","system":"production",
-  "source":"dome_sandbox_nodes.md#3.1 + 00_Краткая_справка_API.md#7.2","status":"normative",
-  "preconditions":[
-    {"check":"printer_3d_01.bed_clear == true","else":"запросить у Оператора remove_part"},
-    {"check":"printer_3d_01.hold_level == null","else":"устранить hold_reason, затем resume"},
-    {"check":"printer_3d_01.online == true","else":"service_action reconnect"},
-    {"check":"файл присутствует в printer_3d_01.files","else":"запросить query list_files"}
-  ],
-  "steps":[
-    "Проверить стол: bed_clear=true и деталь отсутствует.",
-    "Проверить hold_level: при WARNING/ALARM выяснить hold_reason.",
-    "Проверить файл: имя должно быть в списке files.",
-    "Выполнить home, дождаться homed=true.",
-    "Выполнить start_job с именем файла.",
-    "Проверить state=PRINTING, nozzle_temp_c приближается к nozzle_target_c, progress_pct растёт."
-  ],
-  "forbidden":[
-    "start_job при bed_clear=false → BED_COLLISION и ALARM 20 минут",
-    "upload_file с файлом не от организаторов (лимит 16 МБ)",
-    "повторный start_job без проверки state"
-  ]},
- {"id":"P-CNC-JOB","title":"Фрезеровка платы на ЧПУ","system":"production",
-  "source":"00_Краткая_справка_API.md#7.6","status":"normative",
-  "preconditions":[
-    {"check":"cnc_01.online == true"},
-    {"check":"cnc_01.state == IDLE"},
-    {"check":"cnc_01.hold_level == null"},
-    {"check":"вытяжка работает, если идёт пайка рядом"}
-  ],
-  "steps":[
-    "Проверить файлы через query list_files (validate=true).",
-    "Выполнить home и убедиться в homed=true.",
-    "Выполнить move к заготовке в относительном режиме.",
-    "Выполнить probe_z, проверить last_probe.",
-    "Выполнить set_zero с режимом xy.",
-    "Выполнить start_job и контролировать spindle_rpm и progress_pct."
-  ],
-  "forbidden":[
-    "move во время выполнения задания",
-    "start_job без home или с hold_level != null",
-    "превышение хода осей: X ±300, Y ±180, Z ±80 мм"
-  ]},
- {"id":"P-LINE-RESTORE","title":"Восстановление линии умного щита после срабатывания защиты","system":"power",
-  "source":"00_Краткая_справка_API.md#7.4 + 03_energy.md#5","status":"normative",
-  "preconditions":[
-    {"check":"известна причина срабатывания","else":"не включать до выяснения"},
-    {"check":"lockout_remaining_s == 0","else":"дождаться окончания блокировки"}
-  ],
-  "steps":[
-    "Прочитать lines[N]: state, protection_state, alarm_code, lockout_reason.",
-    "Проверить load_power_w и current_a относительно rated_current_a.",
-    "Если protection_state=TRIPPED — выполнить reset_protection.",
-    "Выполнить line_on.",
-    "Проверить state=ON, power_w и current_a; убедиться, что защита не сработала повторно."
-  ],
-  "forbidden":[
-    "более 3 переключений линии за 2 минуты (блокировка 5 минут, lockout_reason=CHATTER)",
-    "line_on при сработавшей защите без reset_protection",
-    "включение всех линий сразу при массовом отключении"
-  ]},
- {"id":"P-DATA-TRUST","title":"Пометка датчика недостоверным и смена основного источника","system":"data",
-  "source":"00_Краткая_справка_API.md#8 + 04_telemetry.md#5","status":"normative",
-  "preconditions":[
-    {"check":"есть минимум два других источника того же параметра"},
-    {"check":"расхождение подтверждено, а не единичное показание"}
-  ],
-  "steps":[
-    "Сравнить climate_sensor_01/02/03 по co2_ppm, temperature_c, humidity_pct.",
-    "Проверить sensor_state и confidence подозрительного датчика.",
-    "Проверить скорость изменения: скачок на 1000 ppm за секунды невозможен.",
-    "Выполнить set_data_trust для датчика со значением UNRELIABLE или FAILED.",
-    "При необходимости выполнить set_primary_sensor на исправный датчик.",
-    "Проверить dome_automation_01.primary_co2_sensor и data_trust.",
-    "Сообщить в чат и зафиксировать в журнале решений."
-  ],
-  "forbidden":[
-    "помечать датчик недостоверным без второго источника",
-    "снимать интерлок без устранения причины"
-  ]}
+  {
+    "id": "P-PRINT-START",
+    "title": "Запуск печати на 3D-принтере",
+    "system": "production",
+    "source": "dome_sandbox_nodes.md#3.1 + 00_Краткая_справка_API.md#7.2",
+    "status": "normative",
+    "preconditions": [
+      {
+        "check": "printer_3d_01.bed_clear == true",
+        "else": "запросить у Оператора remove_part"
+      },
+      {
+        "check": "printer_3d_01.hold_level == null",
+        "else": "устранить hold_reason, затем resume"
+      },
+      {
+        "check": "printer_3d_01.online == true",
+        "else": "service_action reconnect"
+      },
+      {
+        "check": "файл присутствует в printer_3d_01.files",
+        "else": "запросить query list_files"
+      }
+    ],
+    "steps": [
+      "Проверить стол: bed_clear=true и деталь отсутствует.",
+      "Проверить hold_level: при WARNING/ALARM выяснить hold_reason.",
+      "Проверить файл: имя должно быть в списке files.",
+      "Выполнить home, дождаться homed=true.",
+      "Выполнить start_job с именем файла.",
+      "Проверить state=PRINTING, nozzle_temp_c приближается к nozzle_target_c, progress_pct растёт."
+    ],
+    "forbidden": [
+      "start_job при bed_clear=false → BED_COLLISION и ALARM 20 минут",
+      "upload_file с файлом не от организаторов (лимит 16 МБ)",
+      "повторный start_job без проверки state"
+    ]
+  },
+  {
+    "id": "P-CNC-JOB",
+    "title": "Фрезеровка платы на ЧПУ",
+    "system": "production",
+    "source": "00_Краткая_справка_API.md#7.6",
+    "status": "normative",
+    "preconditions": [
+      {
+        "check": "cnc_01.online == true"
+      },
+      {
+        "check": "cnc_01.state == IDLE"
+      },
+      {
+        "check": "cnc_01.hold_level == null"
+      },
+      {
+        "check": "вытяжка работает, если идёт пайка рядом"
+      }
+    ],
+    "steps": [
+      "Проверить файлы через query list_files (validate=true).",
+      "Выполнить home и убедиться в homed=true.",
+      "Выполнить move к заготовке в относительном режиме.",
+      "Выполнить probe_z, проверить last_probe.",
+      "Выполнить set_zero с режимом xy.",
+      "Выполнить start_job и контролировать spindle_rpm и progress_pct."
+    ],
+    "forbidden": [
+      "move во время выполнения задания",
+      "start_job без home или с hold_level != null",
+      "превышение хода осей: X ±300, Y ±180, Z ±80 мм"
+    ]
+  },
+  {
+    "id": "P-LINE-RESTORE",
+    "title": "Восстановление линии умного щита после срабатывания защиты",
+    "system": "power",
+    "source": "00_Краткая_справка_API.md#7.4 + 03_energy.md#5",
+    "status": "normative",
+    "preconditions": [
+      {
+        "check": "известна причина срабатывания",
+        "else": "не включать до выяснения"
+      },
+      {
+        "check": "lockout_remaining_s == 0",
+        "else": "дождаться окончания блокировки"
+      }
+    ],
+    "steps": [
+      "Прочитать lines[N]: state, protection_state, alarm_code, lockout_reason.",
+      "Проверить load_power_w и current_a относительно rated_current_a.",
+      "Если protection_state=TRIPPED — выполнить reset_protection.",
+      "Выполнить line_on.",
+      "Проверить state=ON, power_w и current_a; убедиться, что защита не сработала повторно."
+    ],
+    "forbidden": [
+      "более 3 переключений линии за 2 минуты (блокировка 5 минут, lockout_reason=CHATTER)",
+      "line_on при сработавшей защите без reset_protection",
+      "включение всех линий сразу при массовом отключении"
+    ]
+  },
+  {
+    "id": "P-DATA-TRUST",
+    "title": "Пометка датчика недостоверным и смена основного источника",
+    "system": "data",
+    "source": "00_Краткая_справка_API.md#8 + 04_telemetry.md#5",
+    "status": "normative",
+    "preconditions": [
+      {
+        "check": "есть минимум два других источника того же параметра"
+      },
+      {
+        "check": "расхождение подтверждено, а не единичное показание"
+      }
+    ],
+    "steps": [
+      "Сравнить climate_sensor_01/02/03 по co2_ppm, temperature_c, humidity_pct.",
+      "Проверить sensor_state и confidence подозрительного датчика.",
+      "Проверить скорость изменения: скачок на 1000 ppm за секунды невозможен.",
+      "Выполнить set_data_trust для датчика со значением UNRELIABLE или FAILED.",
+      "При необходимости выполнить set_primary_sensor на исправный датчик.",
+      "Проверить dome_automation_01.primary_co2_sensor и data_trust.",
+      "Сообщить в чат и зафиксировать в журнале решений."
+    ],
+    "forbidden": [
+      "помечать датчик недостоверным без второго источника",
+      "снимать интерлок без устранения причины"
+    ]
+  },
+  {
+    "id": "P-TELEMETRY-LOSS",
+    "title": "Потеря телеметрии узла",
+    "system": "data",
+    "source": "01_API.md#5.2 + 01_API.md#8 + 04_telemetry.md#5",
+    "status": "normative",
+    "preconditions": [
+      {
+        "check": "узел виден в describe_nodes"
+      },
+      {
+        "check": "status телеметрии = UNKNOWN или updated_at не меняется",
+        "else": "считать данные недостоверными"
+      }
+    ],
+    "steps": [
+      "Проверить status узла: UNKNOWN и неизменный updated_at означают потерю телеметрии.",
+      "Не принимать последнее известное значение за текущее; пометить параметр как UNRELIABLE через set_data_trust.",
+      "Выполнить service_action reconnect для узла.",
+      "Проверить, обновился ли updated_at и вернулся ли status = OK.",
+      "Если связь не восстановилась — проверить канал связи, питание узла и Raspberry Pi.",
+      "Сообщить Оператору через meeting_01 и записать наблюдение в журнал решений."
+    ],
+    "forbidden": [
+      "выдавать последнее известное значение за актуальное",
+      "управлять узлом, телеметрия которого недостоверна, без подтверждения"
+    ]
+  }
 ]

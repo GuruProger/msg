@@ -23,10 +23,15 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from builder import chunker, db, episodes, ingest, report, vectors
-from builder.answer import answer
-from builder.evaluator import cmd_eval
-from builder.retrieval import KB
+if __package__ in {None, ""}:
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dome_rag.builder import cards as cards_mod
+from dome_rag.builder import chunker, db, episodes, ingest, manifest, report, vectors
+from dome_rag.builder.answer import answer
+from dome_rag.builder.evaluator import cmd_eval
+from dome_rag.builder.retrieval import KB
 
 
 def _ms(t0: float) -> str:
@@ -34,6 +39,11 @@ def _ms(t0: float) -> str:
 
 
 def cmd_build(args) -> None:
+    from dome_rag.builder.paths import require_corpus, LOGS, CHUNKS
+    corpus = require_corpus()
+    old_episodes = CHUNKS / "episodes.jsonl"
+    if old_episodes.exists() and old_episodes.stat().st_size and not any(LOGS.glob("*/events.jsonl")):
+        raise SystemExit("Нет исходных журналов для эпизодической памяти. Действующая база сохранена.")
     t0 = time.perf_counter()
     print("== ingest")
     ingest.cmd_ingest()
@@ -46,6 +56,11 @@ def cmd_build(args) -> None:
     print(f"   {_ms(t)}")
 
     t = time.perf_counter()
+    print("== cards")
+    cards_mod.cmd_cards()
+    print(f"   {_ms(t)}")
+
+    t = time.perf_counter()
     print("== vectors")
     vectors.cmd_vectors()
     print(f"   {_ms(t)}")
@@ -54,6 +69,11 @@ def cmd_build(args) -> None:
     print("== sqlite")
     path = db.build_db()
     print(f"   {path}  {_ms(t)}")
+
+    t = time.perf_counter()
+    print("== manifest")
+    manifest.cmd_manifest(write=True)
+    print(f"   {_ms(t)}")
 
     t = time.perf_counter()
     print("== report")
@@ -69,9 +89,10 @@ def _print_stats(kb: KB) -> None:
     print("")
     print("Таблицы:")
     for key, value in s.items():
-        if key in ("chunk_types", "duplicates", "vectors"):
+        if key in ("chunk_types", "duplicates", "vectors", "cards"):
             continue
         print(f"  {key:<14} {value}")
+    print(f"  {'cards':<14} {s.get('cards', 0)}")
     print(f"  {'vectors':<14} {s['vectors']}")
     print(f"  {'duplicates':<14} {s['duplicates']}")
     print("Типы чанков:")
@@ -111,13 +132,30 @@ def cmd_ask(args) -> None:
     kb = KB()
     result = answer(args.query, kb, use_llm=args.llm, k=args.k)
     kb.close()
-    if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    if args.json or args.explain:
+        payload = result if args.explain else result
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
         return
     print(result["answer"])
     print("")
-    print(f"Режим: {result['mode']}; уверенность: {result['confidence']['level']} "
+    print(f"Режим: {result['mode']}; вердикт: {result['verdict']}; "
+          f"уверенность: {result['confidence']['level']} "
           f"({result['confidence']['score']:.2f}); тип: {result['intent']}")
+
+
+def cmd_cards(args) -> None:
+    cards_mod.cmd_cards()
+
+
+def cmd_manifest(args) -> None:
+    if args.check:
+        manifest.cmd_doctor()
+    else:
+        manifest.cmd_manifest(write=True)
+
+
+def cmd_doctor(args) -> None:
+    manifest.cmd_doctor()
 
 
 def cmd_stats(args) -> None:
@@ -133,7 +171,7 @@ def cmd_drift(args) -> None:
 
 
 def cmd_live(args) -> None:
-    from builder.live import DomeClient, WSError
+    from dome_rag.builder.live import DomeClient, WSError
 
     client = DomeClient(host=args.host, port=args.port, key=args.key)
     try:
@@ -174,6 +212,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("build", help="полная пересборка: ingest → chunk → vectors → sqlite → report")
     sub.add_parser("ingest", help="извлечь структурированные данные из корпуса")
     sub.add_parser("chunk", help="нарезать корпус и журналы на чанки")
+    sp = sub.add_parser("cards", help="пересобрать карточки знаний")
+    sp.set_defaults(func=cmd_cards)
+
+    sp = sub.add_parser("manifest", help="манифест корпуса: хеши и статусы источников")
+    sp.add_argument("--check", action="store_true", help="только сравнить с текущим корпусом")
+    sp.set_defaults(func=cmd_manifest)
+
+    sp = sub.add_parser("doctor", help="проверить, не устарела ли база после правок корпуса")
+    sp.set_defaults(func=cmd_doctor)
 
     sp = sub.add_parser("vectors", help="пересчитать TF-IDF векторы")
     sp.set_defaults(func=lambda a: vectors.cmd_vectors())
@@ -191,6 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("-k", type=int, default=8)
     sp.add_argument("--llm", action="store_true", help="пересказ через DeepSeek (нужен DEEPSEEK_API_KEY)")
     sp.add_argument("--json", action="store_true")
+    sp.add_argument("--explain", action="store_true", help="показать вердикт, слоты и карточки")
     sp.set_defaults(func=cmd_ask)
 
     sp = sub.add_parser("stats", help="размеры таблиц и чанков")

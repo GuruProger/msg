@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import vectors as vec
 from .chunker import AliasIndex
-from .paths import BUILD, DATA, DB_PATH, VECTORS_PATH
+from .paths import BUILD, CARDS_PATH, CARD_VECTORS_PATH, DATA, DB_PATH, VECTORS_PATH
 
 DEFAULT_COLLECTIONS = ("knowledge", "history", "episodes")
 COLLECTION_WEIGHT = {"knowledge": 1.0, "history": 0.97, "episodes": 0.92}
@@ -36,10 +36,12 @@ def _jload(value, default):
         return default
 
 
-def stems(text: str) -> set[str]:
-    """Грубые основы: первые 5 символов слова. Дёшево и переживает падежи."""
-    return {t[:5] for t in vec.tokenize(text) if len(t) >= 3}
+def _stem(token: str) -> str:
+    """Обратная совместимость: основа слова живёт в ``vectors``."""
+    return vec.stem(token)
 
+
+stems = vec.stems
 
 def overlap(query_stems: set[str], text: str) -> float:
     if not query_stems:
@@ -64,33 +66,109 @@ def negation_penalty(question: str, text: str) -> float:
 
 
 class KB:
-    def __init__(self, db_path: Path | None = None, vectors_path: Path | None = None):
-        self.db_path = Path(db_path or DB_PATH)
+    def __init__(
+        self,
+        db_path: Path | None = None,
+        vectors_path: Path | None = None,
+        *,
+        check_same_thread: bool = True,
+        data_dir: Path | None = None,
+    ):
+        self.db_path = Path(db_path or DB_PATH).resolve()
+        self.data_dir = Path(data_dir) if data_dir else self.db_path.parent.parent / "data"
+        build_dir = self.db_path.parent
         if not self.db_path.exists():
             raise SystemExit(
                 f"База не собрана: {self.db_path}\nВыполните: py kb.py build"
             )
-        self.con = sqlite3.connect(str(self.db_path))
+        self.con = sqlite3.connect(self.db_path.as_uri() + "?mode=ro", uri=True, check_same_thread=check_same_thread)
         self.con.row_factory = sqlite3.Row
-        self._vectors = _load_json(Path(vectors_path or VECTORS_PATH), None)
+        self._vectors = _load_json(Path(vectors_path or build_dir / "vectors.json"), None)
         nodes = [dict(r) for r in self.con.execute(
             "SELECT node_id, code_name, title, aliases_json FROM nodes"
         )]
-        aliases = _load_json(DATA / "curated" / "aliases.json", {})
+        aliases = _load_json(self.data_dir / "curated" / "aliases.json", {})
         self.alias_index = AliasIndex(aliases, nodes)
         self.node_rows = nodes
+        self.cards = self._load_cards()
+        self.card_vectors = _load_json(build_dir / "card_vectors.json", None)
+        self._card_by_id = {card["card_id"]: card for card in self.cards}
+        # Обратный индекс разреженных векторов: запрос касается единиц
+        # терминов, а не всех 1400+ карточек. Это снижает p95 и делает
+        # векторный канал детерминированным при любом размере корпуса.
+        self._card_postings: dict[str, list[tuple[str, float]]] = {}
+        for card_id, weights in ((self.card_vectors or {}).get("vectors") or {}).items():
+            if not isinstance(weights, dict):
+                continue
+            for term, weight in weights.items():
+                self._card_postings.setdefault(term, []).append((card_id, float(weight)))
+        self._cards_by_entity: dict[str, list[str]] = {}
+        self._cards_by_code: dict[str, list[str]] = {}
+        self._cards_by_attribute: dict[str, list[str]] = {}
+        for card in self.cards:
+            for entity in card.get("entities") or []:
+                self._cards_by_entity.setdefault(entity, []).append(card["card_id"])
+            for code in card.get("codes") or []:
+                self._cards_by_code.setdefault(str(code), []).append(card["card_id"])
+            self._cards_by_attribute.setdefault(card["attribute"], []).append(card["card_id"])
+        # Пары основ каждой карточки считаются один раз при загрузке, а не в
+        # каждом канале поиска. Это главный вклад в задержку p95.
+        self._card_pairs: dict[str, frozenset[tuple[str, str]]] = {}
+        for card in self.cards:
+            tokens = [vec.stem(t) for t in vec.tokenize(self._card_text(card))]
+            self._card_pairs[card["card_id"]] = frozenset(zip(tokens, tokens[1:]))
+
+    def _load_cards(self) -> list[dict]:
+        cards = _load_json(self.data_dir / "cards.json", [])
+        if not cards:
+            try:
+                rows = self.con.execute("SELECT * FROM cards").fetchall()
+            except sqlite3.OperationalError:
+                rows = []
+            cards = [
+                {
+                    "card_id": r["card_id"], "subject": r["subject"],
+                    "subject_label": r["subject_label"], "attribute": r["attribute"],
+                    "value": r["value"], "text": r["text"],
+                    "entities": _jload(r["entities"], []),
+                    "codes": _jload(r["codes"], []),
+                    "source": {"doc": r["source_doc"], "title": r["source_title"],
+                               "line": r["source_line"]},
+                    "authority": r["authority"], "status": r["status"],
+                    "canonical_id": r["canonical_id"], "chunk_id": r["chunk_id"],
+                    "has_gaps": bool(r["has_gaps"]), "search_text": r["search_text"],
+                }
+                for r in rows
+            ]
+        return cards
 
     # ------------------------------------------------------------------ поиск
 
+    def detect_entities(self, text: str) -> list[str]:
+        """Сущности вопроса с учётом падежей и вложенных алиасов.
+
+        Вся логика живёт в ``AliasIndex``: длинная фраза маскирует короткую,
+        а падежные формы ловятся по основам. Дублировать её здесь нельзя —
+        иначе «вытяжная вентиляция» снова добавляла бы «приточную».
+        """
+        return self.alias_index.detect(text)[:6]
+
     def _fts_query(self, text: str) -> str:
-        toks = vec.tokenize(text)
+        """FTS-запрос: исходные слова с префиксом.
+
+        Основа слова здесь не добавляется сознательно. Префиксы коротких
+        основ («как»*, «влажнос»*) заставляют FTS5 перебирать почти весь
+        словарь и стоят 20–35 мс на запрос, тогда как морфологию уже
+        покрывают символьные 4-граммы векторного канала и проверка основ в
+        покрытии. Исходная форма с ``*`` находит падежи, начинающиеся с того
+        же корня, и стоит 2–3 мс.
+        """
+        toks = list(dict.fromkeys(vec.tokenize(text)))
         if not toks:
             return ""
-        terms = []
-        for t in dict.fromkeys(toks):
-            # префиксный поиск только для достаточно длинных слов
-            terms.append(f'"{t}"*' if len(t) >= 3 else f'"{t}"')
-        return " OR ".join(terms)
+        return " OR ".join(
+            f'"{t}"*' if len(t) >= 3 else f'"{t}"' for t in toks
+        )
 
     def search(
         self,
@@ -235,6 +313,209 @@ class KB:
                 continue
             seen.add(key)
             out.append(r)
+            if len(out) >= k:
+                break
+        return out
+
+    # ------------------------------------------------------------- карточки v2
+
+    def _card_text(self, card: dict) -> str:
+        return " ".join(
+            str(part or "")
+            for part in (
+                card.get("subject_label"), card.get("subject"), card.get("value"),
+                card.get("text"), card.get("canonical_id"),
+            )
+        )
+
+    def search_cards(self, question: str, k: int = 8, slots=None) -> list[dict]:
+        """Поиск по карточкам: 5 каналов + RRF + детерминированный реранкер.
+
+        Каналы:
+
+        1. ``exact``      — точные коды, сущности, название субъекта;
+        2. ``phrase``     — совпадение формулировки (соседние пары слов);
+        3. ``fts``        — BM25 по FTS5 (исходные слова + основы);
+        4. ``vector``     — разреженный TF-IDF (слова + символьные 4-граммы);
+        5. ``structural`` — точная привязка «сущность × атрибут».
+
+        Слияние — взвешенный Reciprocal Rank Fusion: каналы голосуют рангами,
+        а не несравнимыми оценками. Финальный реранкер линейный и объяснимый.
+        """
+        from . import coverage
+
+        question = (question or "").strip()
+        if not question or not self.cards:
+            return []
+        slots = slots or coverage.extract_slots(question, entities=self.detect_entities(question))
+        candidates: dict[str, float] = {}
+        channels: dict[str, list[str]] = {}
+
+        q_tokens = [vec.stem(t) for t in vec.tokenize(question)]
+        q_pairs = set(zip(q_tokens, q_tokens[1:]))
+        q_pair_count = max(1, len(q_pairs))
+
+        def card_phrase(card: dict) -> float:
+            return len(q_pairs & self._card_pairs.get(card["card_id"], frozenset())) / q_pair_count
+
+        # ---- 1. exact: коды, сущности, точная тема
+        qcodes = {str(c) for c in slots.codes}
+        qents = set(slots.entities)
+        exact: list[tuple[float, str]] = []
+        for card in self.cards:
+            score = 0.0
+            codes = {str(c) for c in (card.get("codes") or [])}
+            entities = set(card.get("entities") or [])
+            if qcodes & codes:
+                score += 1.6
+            if qents & entities:
+                score += (
+                    0.95 if card.get("attribute") in slots.attributes else 0.25
+                )
+            subject = coverage.subject_match(question, card)
+            if subject >= 0.99:
+                score += 1.4
+            elif subject >= 0.60:
+                score += 0.35
+            phrase = card_phrase(card)
+            if phrase >= 0.45:
+                score += 0.9 * phrase
+            if score >= 0.40:
+                exact.append((score, card["card_id"]))
+        exact.sort(key=lambda item: (-item[0], item[1]))
+        channels["exact"] = [cid for _, cid in exact[:160]]
+
+        # ---- 2. phrase: формулировка, а не набор слов
+        phrase_rows = [
+            (card_phrase(card), card["card_id"]) for card in self.cards
+        ]
+        phrase_rows = [item for item in phrase_rows if item[0] >= 0.30]
+        phrase_rows.sort(key=lambda item: (-item[0], item[1]))
+        channels["phrase"] = [cid for _, cid in phrase_rows[:160]]
+
+        # ---- 3. FTS5 / BM25
+        fts_ranked: list[str] = []
+        fts = self._fts_query(question)
+        if fts:
+            try:
+                rows = self.con.execute(
+                    "SELECT card_id, bm25(cards_fts) AS rank FROM cards_fts "
+                    "WHERE cards_fts MATCH ? ORDER BY rank LIMIT 200",
+                    [fts],
+                )
+                fts_ranked = [row["card_id"] for row in rows]
+            except sqlite3.OperationalError:
+                fts_ranked = []
+        if not fts_ranked:
+            # запасной лексический канал: не падать, если FTS-таблицы нет
+            q_stems = stems(question)
+            scored = [
+                (overlap(q_stems, self._card_text(card)), card["card_id"])
+                for card in self.cards
+            ]
+            scored.sort(key=lambda item: (-item[0], item[1]))
+            fts_ranked = [cid for score, cid in scored[:160] if score > 0]
+        channels["fts"] = fts_ranked
+
+        # ---- 4. разреженный TF-IDF через обратный индекс
+        vector_ranked: list[str] = []
+        if self.card_vectors and self.card_vectors.get("idf"):
+            q_vec = vec.query_vector(question, self.card_vectors)
+            scores: dict[str, float] = {}
+            for term, weight in q_vec.items():
+                for card_id, card_weight in self._card_postings.get(term, ()):
+                    scores[card_id] = scores.get(card_id, 0.0) + weight * card_weight
+            ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+            vector_ranked = [cid for cid, _ in ranked[:160] if _ > 0]
+        channels["vector"] = vector_ranked
+
+        # ---- 5. structural: сущность × атрибут, упорядоченно
+        struct_scores: dict[str, float] = {}
+        for entity in qents:
+            for cid in self._cards_by_entity.get(entity, ()):
+                struct_scores[cid] = struct_scores.get(cid, 0.0) + 1.2
+        for code in qcodes:
+            for cid in self._cards_by_code.get(code, ()):
+                struct_scores[cid] = struct_scores.get(cid, 0.0) + 1.6
+        wanted_attributes = set(slots.attributes)
+        wanted_attributes.update(coverage.FALLBACK_ATTRIBUTES)
+        for attribute in wanted_attributes:
+            weight = 1.0 if attribute in slots.attributes else 0.35
+            for cid in self._cards_by_attribute.get(attribute, ()):
+                struct_scores[cid] = struct_scores.get(cid, 0.0) + weight
+        structural = sorted(
+            struct_scores.items(),
+            key=lambda item: (
+                -item[1],
+                -int((self._card_by_id.get(item[0]) or {}).get("authority") or 3),
+                item[0],
+            ),
+        )
+        channels["structural"] = [cid for cid, _ in structural[:220]]
+
+        # ---- взвешенный RRF
+        RRF_K = 60
+        channel_weight = {
+            "exact": 1.40, "phrase": 1.25, "structural": 1.15,
+            "fts": 1.00, "vector": 0.85,
+        }
+        for name, ranked in channels.items():
+            weight = channel_weight.get(name, 1.0)
+            for rank, cid in enumerate(ranked, 1):
+                candidates[cid] = candidates.get(cid, 0.0) + weight / (RRF_K + rank)
+
+        max_rrf = max(candidates.values()) or 1.0
+        scored_cards: list[dict] = []
+        for cid, rrf in candidates.items():
+            card = self._card_by_id.get(cid)
+            if card is None:
+                continue
+            cov = coverage.score_card(slots, card)
+            authority = int(card.get("authority") or 3) / 5.0
+            exact_attr = 1.0 if card.get("attribute") in slots.attributes else 0.0
+            final = (
+                0.44 * (rrf / max_rrf)
+                + 0.38 * cov["total"]
+                + 0.08 * authority
+                + 0.05 * exact_attr
+                + 0.05 * cov["lexical"]
+            )
+            if card.get("has_gaps"):
+                final -= 0.02
+            item = dict(card)
+            item["score"] = round(final, 4)
+            item["coverage"] = cov["total"]
+            item["why"] = {
+                "rrf": round(rrf, 5),
+                "channels": sorted(
+                    name for name, ranked in channels.items() if cid in set(ranked)
+                ),
+                "attribute_match": cov["attribute"],
+                "entity_match": cov["entity"],
+                "code_match": cov["code"],
+                "lexical": cov["lexical"],
+                "subject": cov["subject"],
+                "phrase": cov["phrase"],
+            }
+            scored_cards.append(item)
+
+        scored_cards.sort(
+            key=lambda c: (-c["score"], -int(c.get("authority") or 3), c["card_id"])
+        )
+
+        # Один факт на пару (канонический id, атрибут). Копии одного и того же
+        # утверждения из разных документов не должны занимать весь топ.
+        out: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for card in scored_cards:
+            key = (
+                str(card.get("canonical_id") or card.get("subject") or card["card_id"]),
+                str(card.get("attribute") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(card)
             if len(out) >= k:
                 break
         return out
@@ -420,7 +701,7 @@ class KB:
     def stats(self) -> dict:
         tables = ["sources", "nodes", "node_params", "node_controls", "thresholds",
                   "interlocks", "faults", "diagnostics", "procedures", "policies",
-                  "gaps", "edges", "faq", "glossary", "equipment", "chunks"]
+                  "gaps", "edges", "faq", "glossary", "equipment", "chunks", "cards"]
         out = {t: self.con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
         out["chunk_types"] = {
             r["type"]: r["n"] for r in self.con.execute(

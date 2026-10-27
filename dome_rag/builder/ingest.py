@@ -22,16 +22,82 @@ import re
 from pathlib import Path
 
 from . import md
-from .paths import DATA, KNOWLEDGE, LOGS, PROJECT, rel
+from .paths import DATA, KNOWLEDGE, LOGS, PROJECT, ROOT_DOCS, sources
 
 # ---------------------------------------------------------------- телеметрия
 
+TELEMETRY_FALLBACKS = (
+    "tests/fixtures/telemetry.jsonl",
+    "Dome_RAG-main/tests/fixtures/telemetry.jsonl",
+)
 
-def load_telemetry_sample() -> dict:
-    """Первый снимок телеметрии: реальная схема живого API."""
-    p = sorted(LOGS.glob("*/telemetry.jsonl"))[-1]
-    with p.open(encoding="utf-8") as fh:
-        return json.loads(fh.readline())
+
+def _telemetry_paths() -> list[Path]:
+    """Все известные снимки телеметрии, от новых к старым.
+
+    Раньше здесь было ``sorted(LOGS.glob("*/telemetry.jsonl"))[-1]``: если
+    каталога журналов нет (свежий клон, другой компьютер), сборка падала с
+    ``IndexError``. Теперь отсутствие журналов — не ошибка: ниже есть
+    резервный снимок из тестовой фикстуры.
+    """
+    found: list[Path] = []
+    if LOGS.is_dir():
+        found += sorted(LOGS.glob("*/telemetry.jsonl"), reverse=True)
+        found += sorted(LOGS.glob("telemetry*.jsonl"), reverse=True)
+    for name in TELEMETRY_FALLBACKS:
+        for base in (PROJECT, PROJECT.parent):
+            candidate = base / name
+            if candidate.exists():
+                found.append(candidate)
+    return [p for p in found if p.is_file()]
+
+
+def load_telemetry_sample() -> dict | None:
+    """Первый снимок телеметрии: реальная схема живого API.
+
+    ``None`` означает «снимка нет»; вызывающий код обязан это пережить и
+    собрать базу из реестра и корпуса. Пустая база лучше падения, но база без
+    документов — уже ошибка (см. ``paths.require_corpus``).
+    """
+    for path in _telemetry_paths():
+        try:
+            with path.open(encoding="utf-8") as fh:
+                line = fh.readline()
+            if line.strip():
+                return json.loads(line)
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
+
+
+def _corpus_doc(name: str) -> Path | None:
+    """Найти документ корпуса по имени, не полагаясь на конкретный каталог."""
+    for source in sources():
+        if source.path.name == name:
+            return source.path
+    for path in (KNOWLEDGE / name, PROJECT / name):
+        if path.exists():
+            return path
+    for path in ROOT_DOCS:
+        if path.name == name:
+            return path
+    return None
+
+
+def _require_doc(name: str) -> Path:
+    path = _corpus_doc(name)
+    if path is None:
+        raise SystemExit(f"В корпусе нет обязательного документа {name!r}")
+    return path
+
+
+def _read_doc(name: str) -> str:
+    return md.strip_frontmatter(md.read_text(_require_doc(name)))
+
+
+def _optional_doc(name: str) -> str:
+    path = _corpus_doc(name)
+    return md.strip_frontmatter(md.read_text(path)) if path else ""
 
 
 UNIT_SUFFIXES = sorted(
@@ -119,7 +185,7 @@ def parse_registry() -> dict[str, dict]:
     В документе сбита нумерация разделов (два раза «## 4», «## 5»), поэтому
     карточки собираются по факту наличия ``Уникальный ID``, а не по номерам.
     """
-    path = PROJECT / "dome_sandbox_nodes.md"
+    path = _require_doc("dome_sandbox_nodes.md")
     text = md.strip_frontmatter(md.read_text(path))
     out: dict[str, dict] = {}
     for sec in md.split_sections(text):
@@ -192,7 +258,13 @@ FALLBACK_TITLES = {
 }
 
 
-def build_nodes(telemetry: dict) -> list[dict]:
+def build_nodes(telemetry: dict | None) -> list[dict]:
+    """Узлы из снимка телеметрии и/или реестра.
+
+    Снимок телеметрии — не обязательный вход. Если журналов нет, узлы всё
+    равно описываются по ``dome_sandbox_nodes.md`` и ``controls_api.json``;
+    иначе один отсутствующий каталог ломал всю сборку.
+    """
     registry = parse_registry()
     controls = json.loads((DATA / "curated" / "controls_api.json").read_text(encoding="utf-8"))
     aliases = json.loads((DATA / "curated" / "aliases.json").read_text(encoding="utf-8"))
@@ -200,8 +272,14 @@ def build_nodes(telemetry: dict) -> list[dict]:
     for alias, node_id in aliases.items():
         alias_by_node.setdefault(node_id, []).append(alias)
 
+    payloads: dict[str, dict] = dict((telemetry or {}).get("nodes") or {})
+    schema_path = DATA / "curated/node_schema.json"
+    schema = {n["node_id"]: n for n in json.loads(schema_path.read_text(encoding="utf-8"))} if schema_path.is_file() else {}
+    node_ids = sorted(set(payloads) | set(registry) | set(schema))
+
     nodes = []
-    for node_id, payload in telemetry["nodes"].items():
+    for node_id in node_ids:
+        payload = payloads.get(node_id) or {}
         reg = registry.get(node_id, {})
         params = []
         for key, value in payload.items():
@@ -222,6 +300,8 @@ def build_nodes(telemetry: dict) -> list[dict]:
                 entry["item_fields"] = list(value.keys())
             params.append(entry)
 
+        observed_keys = {p["key"] for p in params}
+        params.extend(dict(p) for p in schema.get(node_id, {}).get("params", []) if p["key"] not in observed_keys)
         system_ru = reg.get("system") or SYSTEM_FALLBACK.get(node_id)
         nodes.append(
             {
@@ -235,7 +315,12 @@ def build_nodes(telemetry: dict) -> list[dict]:
                 "aliases": sorted(set(alias_by_node.get(node_id, []))),
                 "telemetry_doc": reg.get("telemetry_doc", []),
                 "controls_doc": reg.get("controls_doc", []),
-                "source": "dome_sandbox_nodes.md + telemetry.jsonl",
+                "data_source": "telemetry" if payload else "registry",
+                "source": (
+                    "dome_sandbox_nodes.md + telemetry.jsonl"
+                    if payload
+                    else "dome_sandbox_nodes.md (снимок телеметрии недоступен)"
+                ),
             }
         )
     nodes.sort(key=lambda n: n["node_id"])
@@ -256,7 +341,7 @@ FAULT_FIELD_MAP = {
 
 
 def build_faults() -> list[dict]:
-    text = md.strip_frontmatter(md.read_text(KNOWLEDGE / "09_faults.md"))
+    text = _read_doc("09_faults.md")
     faults = []
     for sec in md.split_sections(text):
         m = re.match(r"^(\d+)\.(\d+)\.\s+(.+)$", sec["title"])
@@ -306,7 +391,7 @@ DIAG_LABELS = {
 def build_diagnostics() -> list[dict]:
     out = []
     for fname in DIAG_FILES:
-        text = md.strip_frontmatter(md.read_text(KNOWLEDGE / fname))
+        text = _read_doc(fname)
         n = 0
         for sec in md.split_sections(text):
             if not sec["title"].lower().startswith("ситуация"):
@@ -361,7 +446,7 @@ STEP_PREFIX = re.compile(r"^\d+\.\s*")
 
 
 def build_procedures() -> list[dict]:
-    text = md.strip_frontmatter(md.read_text(KNOWLEDGE / "10_procedures.md"))
+    text = _read_doc("10_procedures.md")
     sections = md.split_sections(text)
     out = []
     for sec in sections:
@@ -412,7 +497,7 @@ def build_procedures() -> list[dict]:
 
 
 def build_faq_and_glossary() -> tuple[list[dict], list[dict]]:
-    text = md.strip_frontmatter(md.read_text(KNOWLEDGE / "11_reference.md"))
+    text = _read_doc("11_reference.md")
     cut = text.find("# Часть 2. Глоссарий")
     part1, part2 = (text[:cut], text[cut:]) if cut > 0 else (text, "")
 
@@ -452,7 +537,7 @@ def build_faq_and_glossary() -> tuple[list[dict], list[dict]]:
 
 
 def build_equipment() -> list[dict]:
-    text = md.strip_frontmatter(md.read_text(KNOWLEDGE / "02_station.md"))
+    text = _read_doc("02_station.md")
     sections = md.split_sections(text)
     out = []
     for sec in sections:
@@ -477,29 +562,30 @@ def build_equipment() -> list[dict]:
 
 
 def build_sources() -> list[dict]:
-    from .paths import knowledge_docs
+    """Реестр источников с хешами, авторитетом и статусом извлечения.
 
-    priority = {
-        "knowledge": 3,
-        "00_Краткая_справка_API.md": 4,
-        "01_API.md": 4,
-        "dome_sandbox_nodes.md": 3,
-        "03_Требования_к_агенту.md": 4,
-    }
-    out = []
-    for p in knowledge_docs():
-        raw = p.read_bytes()
-        out.append(
-            {
-                "id": rel(p),
-                "path": rel(p),
-                "kind": "knowledge" if p.parent.name == "knowledge" else "root",
-                "priority": 4 if p.name in ("00_Краткая_справка_API.md", "01_API.md", "03_Требования_к_агенту.md") else 3,
-                "checksum": hashlib.sha256(raw).hexdigest()[:16],
-                "bytes": len(raw),
-            }
-        )
-    return out
+    DOCX попадают сюда наравне с markdown: если документ «только из
+    картинок», это видно в ``status``, а не теряется молча.
+    """
+    from . import manifest
+
+    scanned = manifest.scan()
+    return [
+        {
+            "id": item.rel_path,
+            "path": item.rel_path,
+            "kind": item.kind,
+            "priority": item.priority,
+            "authority": item.authority,
+            "status": item.status,
+            "checksum": item.sha256[:16],
+            "sha256": item.sha256,
+            "bytes": item.bytes,
+            "chars": item.chars,
+            "note": item.note,
+        }
+        for item in scanned
+    ]
 
 
 # ------------------------------------------------------------------- запись
@@ -508,6 +594,8 @@ def build_sources() -> list[dict]:
 def cmd_ingest() -> None:
     DATA.mkdir(parents=True, exist_ok=True)
     telemetry = load_telemetry_sample()
+    if telemetry is None:
+        print("telemetry   снимок не найден — узлы собираются из реестра")
     nodes = build_nodes(telemetry)
     faults = build_faults()
     diagnostics = build_diagnostics()
@@ -541,3 +629,6 @@ def cmd_ingest() -> None:
     print(f"glossary    {len(glossary):>4}")
     print(f"equipment   {len(equipment):>4}")
     print(f"sources     {len(sources):>4}")
+    for item in sources:
+        if item["status"] != "ok":
+            print(f"  ! {item['path']}: {item['status']} {item['note']}".rstrip())

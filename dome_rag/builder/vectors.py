@@ -19,8 +19,9 @@ import math
 import os
 import re
 from collections import Counter
+from functools import lru_cache
 
-from .paths import BUILD, VECTORS_PATH
+from .paths import BUILD, CARD_VECTORS_PATH, CARDS_PATH, VECTORS_PATH
 
 MODEL_NAME = "word+char4-tfidf-v1"
 MAX_FEATURES_PER_CHUNK = 400
@@ -43,8 +44,46 @@ def normalize_text(text: str) -> str:
     return text
 
 
+@lru_cache(maxsize=8192)
+def _tokens(text: str) -> tuple[str, ...]:
+    return tuple(t for t in TOKEN_RE.findall(normalize_text(text)) if t not in STOP)
+
+
 def tokenize(text: str) -> list[str]:
-    return [t for t in TOKEN_RE.findall(normalize_text(text)) if t not in STOP]
+    """Значимые слова. Кэш важен: один и тот же текст карточки проверяется
+    несколькими каналами поиска и шестью осями покрытия за один запрос."""
+    return list(_tokens(text))
+
+
+# Грубая, но воспроизводимая основа слова. Нужна трём слоям сразу:
+# сопоставлению сущностей (падежи), FTS-запросу и проверке покрытия. Раньше
+# она жила в retrieval.py, из-за чего chunker/cards не могли ей пользоваться и
+# теряли сущность в заголовке «падение солнечной генерации».
+_ENDINGS = (
+    "ами", "ями", "ого", "его", "ому", "ему", "ыми", "ими",
+    "ая", "яя", "ое", "ее", "ые", "ие", "ых", "их", "ой", "ей", "ий", "ый",
+    "ам", "ям", "ах", "ях", "ом", "ем",
+    "а", "я", "ы", "и", "у", "ю", "е", "о", "ь",
+)
+
+
+@lru_cache(maxsize=65536)
+def stem(token: str) -> str:
+    token = normalize_text(token)
+    for ending in _ENDINGS:
+        if len(token) > len(ending) + 2 and token.endswith(ending):
+            return token[: -len(ending)][:7]
+    return token[:7]
+
+
+@lru_cache(maxsize=8192)
+def _stems(text: str) -> frozenset[str]:
+    return frozenset(stem(t) for t in tokenize(text) if len(t) >= 3)
+
+
+def stems(text: str) -> frozenset[str]:
+    """Неизменяемый набор основ: вызывается на каждом сравнении карточки."""
+    return _stems(text)
 
 
 def features(text: str) -> Counter:
@@ -152,3 +191,13 @@ def cmd_vectors() -> None:
     print(f"vectors     {len(payload['vectors'])}  ({size:.1f} МБ)")
     print(f"model       {payload['model']}")
     print(f"features    {len(payload['idf'])}")
+
+    if CARDS_PATH.exists():
+        cards = json.loads(CARDS_PATH.read_text(encoding="utf-8"))
+        proxies = [
+            {"chunk_id": card["card_id"], "search_text": card.get("search_text") or ""}
+            for card in cards
+        ]
+        card_payload = build_vectors(proxies, path=CARD_VECTORS_PATH)
+        card_size = CARD_VECTORS_PATH.stat().st_size / 1024 / 1024
+        print(f"cards       {len(card_payload['vectors'])}  ({card_size:.1f} МБ)")

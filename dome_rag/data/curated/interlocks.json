@@ -14,7 +14,7 @@
  {"id":"IL_LOAD_SHED","title":"Сброс нагрузки: SOC < 25 % / автономность < 1 ч / дефицит","threshold":"TH_LOAD_SHED_SOC",
   "condition":"soc_pct < 25 или autonomy_forecast_h < 1 или power_deficit_w > 0","affected":["smart_panel_01","production"],
   "effect":"отключение второстепенных линий","clear":"после восстановления заряда/баланса мощности",
-  "source":"dome_automation_01.interlocks.IL_LOAD_SHED"},
+  "source":"dome_automation_01.interlocks.IL_LOAD_SHED","aliases":"какие линии отключаются, отключение второстепенных линий, дефицит мощности, какие линии обесточиваются"},
  {"id":"IL_STORM","title":"Штормовой режим: ветер > 20 м/с","threshold":"TH_STORM",
   "condition":"wind_speed_ms > 20","affected":["wind_turbine_01","dome_sealing_01"],
   "effect":"ограничение работы ветрогенератора, подготовка к герметизации","clear":"после снижения ветра",

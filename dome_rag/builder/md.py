@@ -160,7 +160,9 @@ def sentences(text: str) -> list[str]:
 
 def first_sentences(text: str, n: int = 2, limit: int = 320) -> str:
     out = " ".join(sentences(text)[:n])
-    out = re.sub(r"[#*_`|]", "", out)
+    # Markdown emphasis may be removed; API identifiers must survive intact.
+    out = re.sub(r"(?<!\w)_([^_\n]+)_(?!\w)", r"\1", out)
+    out = re.sub(r"[#*`|]", "", out)
     out = re.sub(r"\s+", " ", out).strip()
     return out[:limit]
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import os
+import tempfile
 from pathlib import Path
 
 from .paths import BUILD, CHUNKS, DATA
@@ -17,7 +19,8 @@ PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=OFF;
 
 CREATE TABLE IF NOT EXISTS sources(
-  id TEXT PRIMARY KEY, path TEXT, kind TEXT, priority INT, checksum TEXT, bytes INT);
+  id TEXT PRIMARY KEY, path TEXT, kind TEXT, priority INT, checksum TEXT, bytes INT,
+  authority TEXT, status TEXT, chars INT, note TEXT, sha256 TEXT);
 
 CREATE TABLE IF NOT EXISTS nodes(
   node_id TEXT PRIMARY KEY, code_name TEXT, title TEXT, system TEXT,
@@ -92,6 +95,15 @@ CREATE TABLE IF NOT EXISTS chunks(
 
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts
   USING fts5(chunk_id UNINDEXED, search_text, tokenize='unicode61');
+
+CREATE TABLE IF NOT EXISTS cards(
+  card_id TEXT PRIMARY KEY, subject TEXT, subject_label TEXT, attribute TEXT,
+  value TEXT, text TEXT, entities TEXT, codes TEXT, source_doc TEXT,
+  source_title TEXT, source_line INT, authority INT, status TEXT,
+  canonical_id TEXT, chunk_id TEXT, has_gaps INT, search_text TEXT);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS cards_fts
+  USING fts5(card_id UNINDEXED, search_text, tokenize='unicode61');
 """
 
 
@@ -122,149 +134,180 @@ def _load_jsonl(path: Path) -> list[dict]:
 def build_db(db_path: Path | None = None) -> Path:
     db_path = db_path or (BUILD / "kb.sqlite")
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    if db_path.exists():
-        db_path.unlink()
+    fd, temp_name = tempfile.mkstemp(prefix="kb-", suffix=".sqlite", dir=db_path.parent)
+    os.close(fd)
+    temp_path = Path(temp_name)
+    con = sqlite3.connect(temp_path)
+    try:
+        con.executescript(SCHEMA)
 
-    con = sqlite3.connect(db_path)
-    con.executescript(SCHEMA)
-
-    # --- источники
-    for s in _load_json("sources.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO sources VALUES (?,?,?,?,?,?)",
-            (s["id"], s["path"], s["kind"], s["priority"], s["checksum"], s["bytes"]),
-        )
-
-    # --- узлы
-    for n in _load_json("nodes.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?)",
-            (n["node_id"], n["code_name"], n["title"], n["system"],
-             n.get("system_ru"), _j(n.get("aliases", [])), n.get("source")),
-        )
-        for p in n.get("params", []):
+        # --- источники
+        for s in _load_json("sources.json"):
             con.execute(
-                "INSERT OR REPLACE INTO node_params VALUES (?,?,?,?,?,?,?,?)",
-                (n["node_id"], p["key"], p.get("unit"), p.get("kind"),
-                 p.get("trust"), p.get("enum_hint"),
-                 _j(p.get("item_fields", [])), _j(p.get("sample"))),
-            )
-        for c in n.get("controls", []):
-            con.execute(
-                "INSERT OR REPLACE INTO node_controls VALUES (?,?,?,?,?,?,?,?,?)",
-                (n["node_id"], c["action"], c.get("label"), c.get("allowed_for", "agent"),
-                 1 if c.get("api_confirmed") else 0, _j(c.get("verify_by", [])),
-                 _j(c.get("value_schema")), c.get("notes"), _j(c.get("preconditions", []))),
+                "INSERT OR REPLACE INTO sources VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (s["id"], s["path"], s["kind"], s["priority"], s["checksum"], s["bytes"],
+                 s.get("authority"), s.get("status"), s.get("chars"), s.get("note"),
+                 s.get("sha256")),
             )
 
-    # --- пороги и интерлоки
-    for t in _load_json("thresholds.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO thresholds VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (t["id"], t.get("area"), t.get("metric"), t.get("op"),
-             _j(t.get("value")), t.get("for_s"), t.get("window_s"),
-             t.get("effect"), t.get("source"), t.get("status"), t.get("kind")),
-        )
-    for i in _load_json("interlocks.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO interlocks VALUES (?,?,?,?,?,?,?,?)",
-            (i["id"], i.get("title"), i.get("condition"), i.get("threshold"),
-             _j(i.get("affected", [])), i.get("effect"), i.get("clear"), i.get("source")),
-        )
-
-    # --- отказы
-    for f in _load_json("faults.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO faults VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (f["id"], f.get("category"), f["title"], f.get("observability"),
-             f.get("what_happens"), f.get("how_to_notice"), f.get("human_action"),
-             f.get("agent_action"), f.get("must_not"), f.get("source"), f.get("status")),
-        )
-        for s in f.get("signals", []):
+        # --- узлы
+        for n in _load_json("nodes.json"):
             con.execute(
-                "INSERT INTO fault_signals VALUES (?,?,?,?,?)",
-                (f["id"], s.get("node"), s.get("param"), s.get("op"), _j(s.get("value"))),
+                "INSERT OR REPLACE INTO nodes VALUES (?,?,?,?,?,?,?)",
+                (n["node_id"], n["code_name"], n["title"], n["system"],
+                 n.get("system_ru"), _j(n.get("aliases", [])), n.get("source")),
+            )
+            for p in n.get("params", []):
+                con.execute(
+                    "INSERT OR REPLACE INTO node_params VALUES (?,?,?,?,?,?,?,?)",
+                    (n["node_id"], p["key"], p.get("unit"), p.get("kind"),
+                     p.get("trust"), p.get("enum_hint"),
+                     _j(p.get("item_fields", [])), _j(p.get("sample"))),
+                )
+            for c in n.get("controls", []):
+                con.execute(
+                    "INSERT OR REPLACE INTO node_controls VALUES (?,?,?,?,?,?,?,?,?)",
+                    (n["node_id"], c["action"], c.get("label"), c.get("allowed_for", "agent"),
+                     1 if c.get("api_confirmed") else 0, _j(c.get("verify_by", [])),
+                     _j(c.get("value_schema")), c.get("notes"), _j(c.get("preconditions", []))),
+                )
+
+        # --- пороги и интерлоки
+        for t in _load_json("thresholds.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO thresholds VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (t["id"], t.get("area"), t.get("metric"), t.get("op"),
+                 _j(t.get("value")), t.get("for_s"), t.get("window_s"),
+                 t.get("effect"), t.get("source"), t.get("status"), t.get("kind")),
+            )
+        for i in _load_json("interlocks.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO interlocks VALUES (?,?,?,?,?,?,?,?)",
+                (i["id"], i.get("title"), i.get("condition"), i.get("threshold"),
+                 _j(i.get("affected", [])), i.get("effect"), i.get("clear"), i.get("source")),
             )
 
-    # --- диагностика
-    for d in _load_json("diagnostics.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO diagnostics VALUES (?,?,?,?,?,?,?)",
-            (d["id"], d["title"], d.get("system"), d.get("observation"),
-             d.get("next_steps"), d.get("source"), d.get("status")),
-        )
-        for n, text in enumerate(d.get("checks", []), 1):
-            con.execute("INSERT INTO diagnostic_checks VALUES (?,?,?)", (d["id"], n, text))
-        for n, text in enumerate(d.get("hypotheses", []), 1):
-            con.execute("INSERT INTO diagnostic_hypotheses VALUES (?,?,?)", (d["id"], n, text))
+        # --- отказы
+        for f in _load_json("faults.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO faults VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (f["id"], f.get("category"), f["title"], f.get("observability"),
+                 f.get("what_happens"), f.get("how_to_notice"), f.get("human_action"),
+                 f.get("agent_action"), f.get("must_not"), f.get("source"), f.get("status")),
+            )
+            for s in f.get("signals", []):
+                con.execute(
+                    "INSERT INTO fault_signals VALUES (?,?,?,?,?)",
+                    (f["id"], s.get("node"), s.get("param"), s.get("op"), _j(s.get("value"))),
+                )
 
-    # --- процедуры (сгенерированные + уточнённые вручную)
-    procs = _load_json("procedures.json") + _load_json("procedures_curated.json")
-    seen = set()
-    for p in procs:
-        if p["id"] in seen:
-            continue
-        seen.add(p["id"])
-        con.execute(
-            "INSERT OR REPLACE INTO procedures VALUES (?,?,?,?,?)",
-            (p["id"], p["title"], p.get("system"), p.get("source"), p.get("status")),
-        )
-        for n, text in enumerate(p.get("preconditions", []), 1):
-            con.execute("INSERT INTO procedure_preconditions VALUES (?,?,?)", (p["id"], n, _j(text) if isinstance(text, dict) else text))
-        for n, text in enumerate(p.get("steps", []), 1):
-            con.execute("INSERT INTO procedure_steps VALUES (?,?,?)", (p["id"], n, text))
-        for n, text in enumerate(p.get("forbidden", []), 1):
-            con.execute("INSERT INTO procedure_forbidden VALUES (?,?,?)", (p["id"], n, text))
+        # --- диагностика
+        for d in _load_json("diagnostics.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO diagnostics VALUES (?,?,?,?,?,?,?)",
+                (d["id"], d["title"], d.get("system"), d.get("observation"),
+                 d.get("next_steps"), d.get("source"), d.get("status")),
+            )
+            for n, text in enumerate(d.get("checks", []), 1):
+                con.execute("INSERT INTO diagnostic_checks VALUES (?,?,?)", (d["id"], n, text))
+            for n, text in enumerate(d.get("hypotheses", []), 1):
+                con.execute("INSERT INTO diagnostic_hypotheses VALUES (?,?,?)", (d["id"], n, text))
 
-    # --- политики, пробелы, связи
-    for p in _load_json("policies.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO policies VALUES (?,?,?,?,?,?,?,?)",
-            (p["id"], p.get("scope"), p.get("rule"), p.get("verdict"),
-             _j(p.get("applies_to", [])), p.get("condition"), p.get("action"), p.get("source")),
-        )
-    for g in _load_json("gaps.json"):
-        con.execute(
-            "INSERT OR REPLACE INTO gaps VALUES (?,?,?,?,?,?,?)",
-            (g["id"], g.get("area"), g["description"], g.get("conflict"),
-             _j(g.get("blocks", [])), g.get("resolution"), g.get("source")),
-        )
-    for e in _load_json("edges.json"):
-        con.execute("INSERT INTO edges VALUES (?,?,?,?)",
-                    (e["src"], e["dst"], e.get("relation"), e.get("note")))
+        # --- процедуры (сгенерированные + уточнённые вручную)
+        procs = _load_json("procedures.json") + _load_json("procedures_curated.json")
+        seen = set()
+        for p in procs:
+            if p["id"] in seen:
+                continue
+            seen.add(p["id"])
+            con.execute(
+                "INSERT OR REPLACE INTO procedures VALUES (?,?,?,?,?)",
+                (p["id"], p["title"], p.get("system"), p.get("source"), p.get("status")),
+            )
+            for n, text in enumerate(p.get("preconditions", []), 1):
+                con.execute("INSERT INTO procedure_preconditions VALUES (?,?,?)", (p["id"], n, _j(text) if isinstance(text, dict) else text))
+            for n, text in enumerate(p.get("steps", []), 1):
+                con.execute("INSERT INTO procedure_steps VALUES (?,?,?)", (p["id"], n, text))
+            for n, text in enumerate(p.get("forbidden", []), 1):
+                con.execute("INSERT INTO procedure_forbidden VALUES (?,?,?)", (p["id"], n, text))
 
-    # --- справка
-    for f in _load_json("faq.json"):
-        con.execute("INSERT OR REPLACE INTO faq VALUES (?,?,?,?,?)",
-                    (f["id"], f["question"], f["answer"], f.get("section"), f.get("source")))
-    for g in _load_json("glossary.json"):
-        con.execute("INSERT OR REPLACE INTO glossary VALUES (?,?,?)",
-                    (g["term"], g["definition"], g.get("source")))
-    for e in _load_json("equipment.json"):
-        con.execute("INSERT INTO equipment(section,path_json,columns_json,row_json,source) VALUES (?,?,?,?,?)",
-                    (e["section"], _j(e["path"]), _j(e["columns"]), _j(e["row"]), e["source"]))
+        # --- политики, пробелы, связи
+        for p in _load_json("policies.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO policies VALUES (?,?,?,?,?,?,?,?)",
+                (p["id"], p.get("scope"), p.get("rule"), p.get("verdict"),
+                 _j(p.get("applies_to", [])), p.get("condition"), p.get("action"), p.get("source")),
+            )
+        for g in _load_json("gaps.json"):
+            con.execute(
+                "INSERT OR REPLACE INTO gaps VALUES (?,?,?,?,?,?,?)",
+                (g["id"], g.get("area"), g["description"], g.get("conflict"),
+                 _j(g.get("blocks", [])), g.get("resolution"), g.get("source")),
+            )
+        for e in _load_json("edges.json"):
+            con.execute("INSERT INTO edges VALUES (?,?,?,?)",
+                        (e["src"], e["dst"], e.get("relation"), e.get("note")))
 
-    # --- чанки
-    chunks = _load_jsonl(CHUNKS / "knowledge.jsonl") + _load_jsonl(CHUNKS / "episodes.jsonl")
-    seen_ids = set()
-    for c in chunks:
-        cid = c["chunk_id"]
-        if cid in seen_ids:
-            cid = f"{cid}--{len(seen_ids)}"
-        seen_ids.add(cid)
-        con.execute(
-            "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (cid, c["collection"], c["doc"], _j(c["heading_path"]), c["title"],
-             c["type"], c.get("canonical_id"), _j(c.get("entities", [])),
-             c["verification_status"], 1 if c.get("has_gaps") else 0,
-             c.get("source_priority", 3), c.get("is_duplicate_of"),
-             c["text"], c["search_text"], c.get("line", 0)),
-        )
-        con.execute("INSERT INTO chunks_fts(chunk_id, search_text) VALUES (?,?)",
-                    (cid, c["search_text"]))
+        # --- справка
+        for f in _load_json("faq.json"):
+            con.execute("INSERT OR REPLACE INTO faq VALUES (?,?,?,?,?)",
+                        (f["id"], f["question"], f["answer"], f.get("section"), f.get("source")))
+        for g in _load_json("glossary.json"):
+            con.execute("INSERT OR REPLACE INTO glossary VALUES (?,?,?)",
+                        (g["term"], g["definition"], g.get("source")))
+        for e in _load_json("equipment.json"):
+            con.execute("INSERT INTO equipment(section,path_json,columns_json,row_json,source) VALUES (?,?,?,?,?)",
+                        (e["section"], _j(e["path"]), _j(e["columns"]), _j(e["row"]), e["source"]))
 
-    con.commit()
-    con.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('optimize')")
-    con.commit()
+        # --- чанки
+        chunks = _load_jsonl(CHUNKS / "knowledge.jsonl") + _load_jsonl(CHUNKS / "episodes.jsonl")
+        seen_ids = set()
+        for c in chunks:
+            cid = c["chunk_id"]
+            if cid in seen_ids:
+                cid = f"{cid}--{len(seen_ids)}"
+            seen_ids.add(cid)
+            con.execute(
+                "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (cid, c["collection"], c["doc"], _j(c["heading_path"]), c["title"],
+                 c["type"], c.get("canonical_id"), _j(c.get("entities", [])),
+                 c["verification_status"], 1 if c.get("has_gaps") else 0,
+                 c.get("source_priority", 3), c.get("is_duplicate_of"),
+                 c["text"], c["search_text"], c.get("line", 0)),
+            )
+            con.execute("INSERT INTO chunks_fts(chunk_id, search_text) VALUES (?,?)",
+                        (cid, c["search_text"]))
+
+        con.commit()
+        con.execute("INSERT INTO chunks_fts(chunks_fts) VALUES('optimize')")
+
+        # --- карточки знаний (единица поиска v2)
+        for card in _load_json("cards.json"):
+            source = card.get("source") or {}
+            con.execute(
+                "INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (card["card_id"], card.get("subject"), card.get("subject_label"),
+                 card.get("attribute"), card.get("value"), card.get("text"),
+                 _j(card.get("entities", [])), _j(card.get("codes", [])),
+                 source.get("doc"), source.get("title"), source.get("line", 0),
+                 card.get("authority", 3), card.get("status"),
+                 card.get("canonical_id"), card.get("chunk_id"),
+                 1 if card.get("has_gaps") else 0, card.get("search_text")),
+            )
+            con.execute(
+                "INSERT INTO cards_fts(card_id, search_text) VALUES (?,?)",
+                (card["card_id"], card.get("search_text") or ""),
+            )
+
+        con.commit()
+        con.execute("INSERT INTO cards_fts(cards_fts) VALUES('optimize')")
+        con.commit()
+        con.execute("PRAGMA journal_mode=DELETE")
+    except BaseException:
+        con.close()
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(temp_path) + suffix).unlink(missing_ok=True)
+        raise
     con.close()
+    temp_path.replace(db_path)
     return db_path

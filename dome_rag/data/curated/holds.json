@@ -1,0 +1,44 @@
+[
+  {
+    "id": "HOLD-PRINTER",
+    "node": "printer_3d_01",
+    "title": "Удержание 3D-принтера",
+    "fields": "hold_level (null / WARNING / ALARM), hold_reason (код причины), resume_attempts (0–3), lockout_remaining_s",
+    "reasons": [
+      "IL_CO2",
+      "IL_CONDENSATE",
+      "IL_SMOKE",
+      "IL_VOC_BOX",
+      "UNDERVOLTAGE",
+      "BED_COLLISION",
+      "FILAMENT_RUNOUT"
+    ],
+    "rules": [
+      "Паузу ставит сервер — автоматика купола или аварийная ситуация; агент не может ставить печать на паузу.",
+      "Причина паузы записана в hold_reason; пока интерлок TRIPPED, причина действует.",
+      "resume работает только после устранения причины; иначе success:true, но станок остаётся на паузе.",
+      "Три resume без устранения причины → ALARM на 20 минут, задание принтера отменяется.",
+      "Пауза с hold_reason = null (например, её поставил Оператор) снимается resume без ограничений."
+    ],
+    "source": "01_API.md#7.1"
+  },
+  {
+    "id": "HOLD-CNC",
+    "node": "cnc_01",
+    "title": "Удержание фрезера",
+    "fields": "hold_level (null / WARNING / ALARM), hold_reason (код причины), resume_attempts (0–3), lockout_remaining_s",
+    "reasons": [
+      "IL_CO2",
+      "IL_CONDENSATE",
+      "IL_SMOKE",
+      "IL_VOC_BOX",
+      "UNDERVOLTAGE"
+    ],
+    "rules": [
+      "Паузу ставит сервер — автоматика купола или аварийная ситуация.",
+      "Причина паузы записана в hold_reason.",
+      "Три resume без устранения причины → ALARM на 20 минут; фрезер остаётся на паузе с остановленным шпинделем."
+    ],
+    "source": "01_API.md#7.1"
+  }
+]

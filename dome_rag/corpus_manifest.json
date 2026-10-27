@@ -1,0 +1,278 @@
+{
+ "manifest_version": 2,
+ "builder_version": "2.0.0",
+ "generated_at": "2026-10-27T06:38:50+00:00",
+ "corpus_hash": "845e4e269ace0c68e9f1003df51a4813",
+ "knowledge_dir": "Dome_RAG-main/knowledge",
+ "logs_dir": "Dome_RAG-main/Logs",
+ "root_docs": [
+  "Dome_RAG-main/01_API.md",
+  "Dome_RAG-main/dome_sandbox_nodes.md",
+  "Dome_RAG-main/02_Задание_и_оценка.md",
+  "Dome_RAG-main/03_Требования_к_агенту.md",
+  "Dome_RAG-main/04_Как_создаётся_агент.md"
+ ],
+ "counts": {
+  "documents": 23,
+  "ok": 22,
+  "image_only": 1,
+  "not_extracted": 0,
+  "docx": 5,
+  "md": 18
+ },
+ "sources": [
+  {
+   "path": "knowledge/00_assistant.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "ee0946a3624e2b9057eb25b234df712a3b78d15fe1827c84776bda6e973956a1",
+   "bytes": 29498,
+   "chars": 16138,
+   "note": ""
+  },
+  {
+   "path": "knowledge/01_legend.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "a4fd52a3ca50495f74b44274b5de2ada5228f8da03356d63269ba46c9e0115b5",
+   "bytes": 32793,
+   "chars": 17750,
+   "note": ""
+  },
+  {
+   "path": "knowledge/02_station.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "9372482ef36c29f267f77994956446c929d0399438a3a65e72b392fbc3f9921c",
+   "bytes": 43721,
+   "chars": 24266,
+   "note": ""
+  },
+  {
+   "path": "knowledge/03_energy.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "f8e3fa0448fd60a6e867ae3a950bf69ae480827566dcfba951364397d7671421",
+   "bytes": 74210,
+   "chars": 41162,
+   "note": ""
+  },
+  {
+   "path": "knowledge/04_telemetry.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "87585570ec60918c821725f160f8ebe11eb1c64ce516b9b3fa4d8e38ab44d550",
+   "bytes": 77633,
+   "chars": 42887,
+   "note": ""
+  },
+  {
+   "path": "knowledge/05_production.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "df166d130f9a0105b5c695dd69e4a8dbe95acdfbc7a6e533d9aba4a7e77aac03",
+   "bytes": 75109,
+   "chars": 41349,
+   "note": ""
+  },
+  {
+   "path": "knowledge/06_microclimate.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "103028e4e9230f2d4af7af3e0a1cc3f9d6437861f37df860af3683166601e957",
+   "bytes": 19302,
+   "chars": 11015,
+   "note": ""
+  },
+  {
+   "path": "knowledge/07_rules.md",
+   "kind": "md",
+   "authority": "regulation",
+   "priority": 5,
+   "status": "ok",
+   "sha256": "7a8cc6ed95d125b3d9d5b5346fd24578a50fc4e3775a20cebdc72a9bf05deb0f",
+   "bytes": 28890,
+   "chars": 15723,
+   "note": ""
+  },
+  {
+   "path": "knowledge/08_safety.md",
+   "kind": "md",
+   "authority": "regulation",
+   "priority": 5,
+   "status": "ok",
+   "sha256": "173af38ed763a175aa8891cc790f73731919ce0809f8585c6285ba8383d0f400",
+   "bytes": 19720,
+   "chars": 11154,
+   "note": ""
+  },
+  {
+   "path": "knowledge/09_faults.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "6bfe0461a2a5782ee2603e4b3aa28785b9e01a8a9dbbaaee03c3b29014d66d52",
+   "bytes": 48216,
+   "chars": 27685,
+   "note": ""
+  },
+  {
+   "path": "knowledge/10_procedures.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "4050fcf6a26ef9e61749af8a482952c39a1f854a77396be495c322cdfab38914",
+   "bytes": 31298,
+   "chars": 17232,
+   "note": ""
+  },
+  {
+   "path": "knowledge/11_reference.md",
+   "kind": "md",
+   "authority": "reference",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "cd4cb171401b499b9b58271f857e925f31392dc6ee9ec24fe328602e96f5a72d",
+   "bytes": 34143,
+   "chars": 19261,
+   "note": ""
+  },
+  {
+   "path": "knowledge/12_history.md",
+   "kind": "md",
+   "authority": "history",
+   "priority": 2,
+   "status": "ok",
+   "sha256": "aeb8acfc270431e3147073967e497af4284c89c9170ea7390531befc6edbc272",
+   "bytes": 27741,
+   "chars": 15236,
+   "note": ""
+  },
+  {
+   "path": "knowledge/Задание и техкарта.docx",
+   "kind": "docx",
+   "authority": "task",
+   "priority": 5,
+   "status": "ok",
+   "sha256": "2c80fc0e126da4beeb6137357fd6148f8a3c76bcefd3155d1dfc240aa5092f89",
+   "bytes": 3915396,
+   "chars": 17438,
+   "note": "рисунков 9, таблиц 2"
+  },
+  {
+   "path": "knowledge/Итог проект пленок Оксида меди.docx",
+   "kind": "docx",
+   "authority": "theory",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "acc0e7b927758515e8548ede54b5351455abe1b14c4ffd3ae2ad9ad7a1392d8a",
+   "bytes": 728910,
+   "chars": 19729,
+   "note": "рисунков 2, таблиц 1"
+  },
+  {
+   "path": "knowledge/Легенда реактор МКИ 2026.docx",
+   "kind": "docx",
+   "authority": "scenario",
+   "priority": 3,
+   "status": "ok",
+   "sha256": "159cf59d9a2628b43fe98af049c15f66aa3246072e596dc4b415c4bdecb23dfe",
+   "bytes": 7850,
+   "chars": 1219,
+   "note": ""
+  },
+  {
+   "path": "knowledge/Материалы для подготовки.docx",
+   "kind": "docx",
+   "authority": "prep",
+   "priority": 2,
+   "status": "ok",
+   "sha256": "69f0480fd668d63186601b93b6cdee6aee41c03cbd2400c8c480f60eb7cd7879",
+   "bytes": 8118,
+   "chars": 777,
+   "note": ""
+  },
+  {
+   "path": "knowledge/Окрашивание статья ЮТ.docx",
+   "kind": "docx",
+   "authority": "history",
+   "priority": 2,
+   "status": "image_only",
+   "sha256": "71e6603de809ab4214e15abc84826a62cf12ae31b4bd7366d86b13fcb25804cf",
+   "bytes": 6493208,
+   "chars": 118,
+   "note": "рисунков 2, таблиц 0"
+  },
+  {
+   "path": "01_API.md",
+   "kind": "md",
+   "authority": "api",
+   "priority": 5,
+   "status": "ok",
+   "sha256": "1935fdb3e5afb546fb30b2f0a8f0207061229185e7deb75974ff6e2798fdb066",
+   "bytes": 57636,
+   "chars": 41763,
+   "note": ""
+  },
+  {
+   "path": "dome_sandbox_nodes.md",
+   "kind": "md",
+   "authority": "registry",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "e3fe068109c79636179136be36d5e2751a2eac17145156a78b882c5755ac7214",
+   "bytes": 33100,
+   "chars": 20511,
+   "note": ""
+  },
+  {
+   "path": "02_Задание_и_оценка.md",
+   "kind": "md",
+   "authority": "task",
+   "priority": 4,
+   "status": "ok",
+   "sha256": "8f5b0223019b7a93545e534885d62c0e4ef529ec994165449a52dc4488b2578e",
+   "bytes": 9549,
+   "chars": 5380,
+   "note": ""
+  },
+  {
+   "path": "03_Требования_к_агенту.md",
+   "kind": "md",
+   "authority": "req",
+   "priority": 5,
+   "status": "ok",
+   "sha256": "92d098e89118130f8c32e61400fafb05393eda69ebcf91c4036b9b85e8af9eed",
+   "bytes": 16675,
+   "chars": 11475,
+   "note": ""
+  },
+  {
+   "path": "04_Как_создаётся_агент.md",
+   "kind": "md",
+   "authority": "overview",
+   "priority": 2,
+   "status": "ok",
+   "sha256": "82256b23ce6a320a42483373e78b5d28d9e4db4e3c0bc82d67d239922baddb5b",
+   "bytes": 5936,
+   "chars": 3325,
+   "note": ""
+  }
+ ]
+}
