@@ -180,7 +180,14 @@ class StateStore:
     def seen_message(self, message_id: int) -> bool:
         if message_id <= self.last_message_id:
             return True
-        handled = {int(value) for value in self.data.get("handled_message_ids") or []}
+        handled: set[int] = set()
+        values = self.data.get("handled_message_ids")
+        if isinstance(values, list):
+            for value in values:
+                try:
+                    handled.add(int(value))
+                except (TypeError, ValueError):
+                    continue
         return int(message_id) in handled
 
     # --- action / notification guards --------------------------------

@@ -568,6 +568,7 @@ class LoggingStateTests(unittest.TestCase):
                         },
                         "failed_until": {"bad": "not-a-time", "ok": 105.0},
                         "operator_requests": {"bad": "not-a-dict"},
+                        "handled_message_ids": ["bad", {}, 5],
                     }
                 ),
                 encoding="utf-8",
@@ -585,6 +586,8 @@ class LoggingStateTests(unittest.TestCase):
             self.assertTrue(state.action_succeeded("ok"))
             self.assertTrue(state.action_failed_recently("ok", now=100.0))
             self.assertTrue(state.should_notify("new", "hello", now=100.0))
+            self.assertTrue(state.seen_message(5))
+            self.assertFalse(state.seen_message(6))
 
     def test_malformed_state_collections_are_reset_and_pruned(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
