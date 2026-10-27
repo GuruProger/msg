@@ -485,6 +485,22 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_machine_error_message_does_not_claim_the_job_was_removed(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update({"state": "PRINTING", "error_code": "E123"})
+        task = {
+            "message_id": 13,
+            "items": [
+                {"kind": "print", "file": "bracket_v2.gcode", "status": "started", "text": "print"}
+            ],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertEqual(result.task["items"][0]["status"], "needs_info")
+        self.assertEqual(result.task["items"][0]["note"], "machine error E123")
+        text = result.messages[0].text
+        self.assertNotIn("снято", text)
+        self.assertIn("проверки Оператора", text)
+
     def test_smoke_message_does_not_claim_a_stop_that_did_not_happen(self) -> None:
         data = base_telemetry()
         data["nodes"]["smoke_detector_01"]["smoke_detected"] = True

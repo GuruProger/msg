@@ -1105,9 +1105,9 @@ class RuleEngine:
                     situation=f"{node_id} в ошибке",
                     cause=str(node.get("error_code") or node.get("alarm_code") or "unknown"),
                     confidence=0.95,
-                    plan=["остановить задачу", "сообщить Оператору"],
+                    plan=["не запускать задание", "сообщить Оператору"],
                     messages=[OutgoingMessage(
-                        f"{node_id}: ошибка {node.get('error_code') or node.get('alarm_code')}. Задание снято с выполнения.",
+                        f"{node_id}: ошибка {node.get('error_code') or node.get('alarm_code')}. Задание ждёт проверки Оператора.",
                         f"{node_id}:error:{task.get('message_id')}",
                         min_interval_s=300,
                     )],
