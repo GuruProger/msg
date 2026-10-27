@@ -555,6 +555,74 @@ class LoggingStateTests(unittest.TestCase):
             loaded.mark_action("line8-off", success=True, now=102.0)
             self.assertFalse(loaded.action_failed_recently("line8-off", now=103.0))
 
+    def test_malformed_state_entries_do_not_break_guards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "last_actions": {
+                            "bad": "not-a-dict",
+                            "bad-at": {"at": "not-a-time"},
+                            "ok": {"at": 100.0, "success": True},
+                        },
+                        "failed_until": {"bad": "not-a-time", "ok": 105.0},
+                        "operator_requests": {"bad": "not-a-dict"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            state = StateStore(path)
+
+            self.assertIsNone(state.load_error)
+            self.assertFalse(state.action_succeeded("bad"))
+            self.assertTrue(state.action_allowed("bad", 10.0, now=100.0))
+            self.assertTrue(state.action_allowed("bad-at", 10.0, now=100.0))
+            self.assertEqual(state.cooldown_remaining("bad-at", 10.0, now=100.0), 0.0)
+            self.assertFalse(state.action_failed_recently("bad", now=100.0))
+            self.assertEqual(state.failure_remaining("bad", now=100.0), 0.0)
+            self.assertTrue(state.action_succeeded("ok"))
+            self.assertTrue(state.action_failed_recently("ok", now=100.0))
+            self.assertTrue(state.should_notify("new", "hello", now=100.0))
+
+    def test_malformed_state_collections_are_reset_and_pruned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            state = StateStore(path)
+            state.data["last_actions"] = "not-a-dict"
+            state.data["failed_until"] = "not-a-dict"
+            state.data["operator_requests"] = "not-a-dict"
+
+            state.mark_action("new", success=True, now=10.0)
+            state.mark_action_failure("new-failure", 5.0, now=10.0)
+            self.assertTrue(state.should_notify("new-request", "hello", now=10.0))
+            self.assertIsInstance(state.data["last_actions"], dict)
+            self.assertIsInstance(state.data["failed_until"], dict)
+            self.assertIsInstance(state.data["operator_requests"], dict)
+
+            state.data["last_actions"] = {
+                f"a{i}": "malformed" if i % 2 else {"at": i}
+                for i in range(205)
+            }
+            state.data["failed_until"] = {
+                f"f{i}": "malformed" if i % 2 else float(i)
+                for i in range(205)
+            }
+            state.data["operator_requests"] = {
+                f"r{i}": "malformed" if i % 2 else {"at": i, "text": "x"}
+                for i in range(85)
+            }
+
+            state.mark_action("trigger-prune", success=True, now=300.0)
+            state.mark_action_failure("trigger-prune", 5.0, now=300.0)
+            self.assertTrue(state.should_notify("trigger-prune", "text", now=300.0))
+
+            self.assertLessEqual(len(state.data["last_actions"]), 200)
+            self.assertLessEqual(len(state.data["failed_until"]), 200)
+            self.assertLessEqual(len(state.data["operator_requests"]), 80)
+            self.assertTrue(StateStore(path).action_succeeded("trigger-prune"))
+
     def test_log_is_jsonl_and_redacts_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log = AgentLog(tmp, secrets=("secret-value",))

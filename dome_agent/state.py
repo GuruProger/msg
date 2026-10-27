@@ -31,6 +31,22 @@ def _default_state() -> dict[str, Any]:
     }
 
 
+def _as_epoch(value: Any) -> float:
+    """Convert a persisted timestamp to float, tolerating malformed values."""
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _action_entry(actions: Any, key: str) -> dict[str, Any]:
+    """Return a valid action entry from a possibly malformed mapping."""
+    if not isinstance(actions, dict):
+        return {}
+    entry = actions.get(key)
+    return entry if isinstance(entry, dict) else {}
+
+
 class StateStore:
     """JSON state with atomic replacement and permissive migration."""
 
@@ -171,11 +187,8 @@ class StateStore:
 
     def action_allowed(self, key: str, cooldown_s: float, *, now: float | None = None) -> bool:
         now = time.time() if now is None else now
-        entry = (self.data.get("last_actions") or {}).get(key) or {}
-        try:
-            last = float(entry.get("at") or 0.0)
-        except (TypeError, ValueError):
-            last = 0.0
+        entry = _action_entry(self.data.get("last_actions"), key)
+        last = _as_epoch(entry.get("at"))
         return last <= 0 or (now - last) >= max(0.0, cooldown_s)
 
     def mark_action(
@@ -187,19 +200,29 @@ class StateStore:
         failure_cooldown_s: float = 0.0,
     ) -> None:
         now = time.time() if now is None else now
-        actions = self.data.setdefault("last_actions", {})
+        actions = self.data.get("last_actions")
+        if not isinstance(actions, dict):
+            actions = {}
+            self.data["last_actions"] = actions
         actions[key] = {"at": float(now), "success": success}
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            failures = {}
+            self.data["failed_until"] = failures
         if success is True:
-            self.data.setdefault("failed_until", {}).pop(str(key), None)
+            failures.pop(str(key), None)
         elif success is False and failure_cooldown_s > 0:
-            failures = self.data.setdefault("failed_until", {})
             failures[str(key)] = float(now) + max(0.0, float(failure_cooldown_s))
             self._prune_failed_until()
         # Keep the file small and bounded.
         if len(actions) > 200:
             ordered = sorted(
                 actions.items(),
-                key=lambda item: float((item[1] or {}).get("at") or 0.0),
+                key=lambda item: (
+                    _as_epoch(item[1].get("at"))
+                    if isinstance(item[1], dict)
+                    else 0.0
+                ),
                 reverse=True,
             )[:200]
             self.data["last_actions"] = dict(ordered)
@@ -214,7 +237,10 @@ class StateStore:
     ) -> None:
         """Remember that ``key`` recently failed verification."""
         now = time.time() if now is None else now
-        failures = self.data.setdefault("failed_until", {})
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            failures = {}
+            self.data["failed_until"] = failures
         failures[str(key)] = float(now) + max(0.0, float(cooldown_s))
         self._prune_failed_until()
         self.save()
@@ -225,15 +251,11 @@ class StateStore:
         failures = self.data.get("failed_until")
         if not isinstance(failures, dict):
             return False
-        try:
-            until = float(failures.get(str(key)) or 0.0)
-        except (TypeError, ValueError):
-            return False
-        return until > now
+        return _as_epoch(failures.get(str(key))) > now
 
     def action_succeeded(self, key: str) -> bool:
         """Return True only when ``key`` was last recorded as successful."""
-        entry = (self.data.get("last_actions") or {}).get(str(key)) or {}
+        entry = _action_entry(self.data.get("last_actions"), str(key))
         return bool(entry.get("success") is True)
 
     def failure_remaining(self, key: str, *, now: float | None = None) -> float:
@@ -242,11 +264,7 @@ class StateStore:
         failures = self.data.get("failed_until")
         if not isinstance(failures, dict):
             return 0.0
-        try:
-            until = float(failures.get(str(key)) or 0.0)
-        except (TypeError, ValueError):
-            return 0.0
-        return max(0.0, until - now)
+        return max(0.0, _as_epoch(failures.get(str(key))) - now)
 
     def _prune_failed_until(self) -> None:
         failures = self.data.get("failed_until")
@@ -257,18 +275,15 @@ class StateStore:
             return
         ordered = sorted(
             failures.items(),
-            key=lambda item: float(item[1] or 0.0),
+            key=lambda item: _as_epoch(item[1]),
             reverse=True,
         )[:200]
         self.data["failed_until"] = dict(ordered)
 
     def cooldown_remaining(self, key: str, cooldown_s: float, *, now: float | None = None) -> float:
         now = time.time() if now is None else now
-        entry = (self.data.get("last_actions") or {}).get(key) or {}
-        try:
-            last = float(entry.get("at") or 0.0)
-        except (TypeError, ValueError):
-            last = 0.0
+        entry = _action_entry(self.data.get("last_actions"), key)
+        last = _as_epoch(entry.get("at"))
         return max(0.0, cooldown_s - (now - last)) if last else 0.0
 
     def should_notify(
@@ -281,20 +296,25 @@ class StateStore:
     ) -> bool:
         """Return true when this exact operator notification is due again."""
         now = time.time() if now is None else now
-        requests = self.data.setdefault("operator_requests", {})
-        entry = requests.get(key) or {}
-        try:
-            last = float(entry.get("at") or 0.0)
-            previous = str(entry.get("text") or "")
-        except (TypeError, ValueError):
-            last, previous = 0.0, ""
+        requests = self.data.get("operator_requests")
+        if not isinstance(requests, dict):
+            requests = {}
+            self.data["operator_requests"] = requests
+        entry = requests.get(key)
+        entry = entry if isinstance(entry, dict) else {}
+        last = _as_epoch(entry.get("at"))
+        previous = str(entry.get("text") or "")
         if previous == text and last and (now - last) < min_interval_s:
             return False
         requests[key] = {"at": float(now), "text": text}
         if len(requests) > 80:
             ordered = sorted(
                 requests.items(),
-                key=lambda item: float((item[1] or {}).get("at") or 0.0),
+                key=lambda item: (
+                    _as_epoch(item[1].get("at"))
+                    if isinstance(item[1], dict)
+                    else 0.0
+                ),
                 reverse=True,
             )[:80]
             self.data["operator_requests"] = dict(ordered)
