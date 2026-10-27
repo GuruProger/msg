@@ -57,6 +57,8 @@ class CommandGate:
         """Return whether ``action`` may be executed."""
         if dry_run:
             return GateDecision(True, "dry-run: no command is sent")
+        if str(action.action) == "stop_job":
+            return GateDecision(False, "action 'stop_job' is not allowed: unsupported by API; use documented pause_job")
         if self.yolo:
             return GateDecision(True, "YOLO: policy and cooldowns bypassed", unsafe=True)
         if not self.control_enabled:

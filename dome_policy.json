@@ -108,13 +108,15 @@
       "start_job",
       "resume",
       "home",
-      "reconnect"
+      "reconnect",
+      "stop_job"
     ],
     "cnc_01": [
       "start_job",
       "resume",
       "home",
-      "reconnect"
+      "reconnect",
+      "stop_job"
     ]
   }
 }

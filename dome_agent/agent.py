@@ -42,6 +42,7 @@ from .control import (
     is_auto_protective,
 )
 from .gate import CommandGate
+from .knowledge import KnowledgeService
 from .llm import Advice, DeepSeekAdvisor
 from .logging import AgentLog
 from .rules import NO_VALUE, ActionSpec, OutgoingMessage, RuleEngine, RuleResult
@@ -100,6 +101,19 @@ def _alert_key(alerts: list[dict[str, Any]]) -> tuple[tuple[str, str], ...]:
     )
 
 
+def _pack_refs(pack: Mapping[str, Any]) -> list[str]:
+    """Короткие ссылки на источники для журнала решений."""
+    refs: list[str] = []
+    for source in pack.get("sources") or []:
+        doc = str(source.get("doc") or "").strip()
+        title = str(source.get("title") or "").strip()
+        ident = str(source.get("id") or "").strip()
+        label = " — ".join(part for part in (doc, title or ident) if part)
+        if label and label not in refs:
+            refs.append(label[:200])
+    return refs[:8]
+
+
 class DomeAgent:
     """Stateful autonomous shift agent."""
 
@@ -113,6 +127,7 @@ class DomeAgent:
         rules: RuleEngine | None = None,
         advisor: DeepSeekAdvisor | None = None,
         gate: CommandGate | None = None,
+        knowledge: KnowledgeService | None = None,
     ) -> None:
         self.config = config
         self.log = log or AgentLog(
@@ -134,6 +149,13 @@ class DomeAgent:
         )
         self.rules = rules or RuleEngine(self.state, yolo=config.yolo)
         self.advisor = advisor or DeepSeekAdvisor(config, self.log)
+        self.knowledge = knowledge or KnowledgeService(
+            config.kb_dir,
+            db_path=config.kb_db,
+            max_cards=config.kb_max_cards,
+            max_chars=config.kb_max_chars,
+            enabled=config.kb_enabled,
+        )
 
         self._stop = asyncio.Event()
         self._stop_reason: str | None = None
@@ -169,7 +191,7 @@ class DomeAgent:
         self._pending: PendingProposal | None = None
         self._incoming: list[ChatMessage] = []
         self._llm_notice_sent = False
-        self.tool = DomeTool(self.api)
+        self.tool = DomeTool(self.api, self.knowledge)
         self._recent_chat: deque[dict[str, str]] = deque(maxlen=8)
         self._sent_message_times: deque[float] = deque()
         self._guest_notice_logged = False
@@ -185,6 +207,7 @@ class DomeAgent:
             "llm_commands": 0,
             "messages": 0,
             "reconnects": 0,
+            "knowledge_queries": 0,
         }
 
     # ------------------------------------------------------------------
@@ -287,6 +310,10 @@ class DomeAgent:
                     pass
         try:
             await self.advisor.close()
+        except Exception:
+            pass
+        try:
+            await self.knowledge.aclose()
         except Exception:
             pass
         try:
@@ -1777,12 +1804,71 @@ class DomeAgent:
         except Exception as exc:
             self._log_exception("llm_control", exc)
 
+    def _knowledge_question(
+        self,
+        decision: RuleResult,
+        messages: list[ChatMessage],
+    ) -> str:
+        """Вопрос для базы знаний: слова Оператора важнее текста правил."""
+        for message in reversed(messages):
+            text = (message.text or "").strip()
+            if text:
+                return text[:600]
+        parts = [
+            part
+            for part in ((decision.situation or "").strip(), (decision.cause or "").strip())
+            if part
+        ]
+        if not parts:
+            return ""
+        text = parts[0]
+        if len(parts) > 1 and parts[1].casefold() not in text.casefold():
+            text = f"{text}. {parts[1]}"
+        return text[:600]
+
+    async def _knowledge_pack(self, question: str, *, purpose: str) -> dict[str, Any] | None:
+        """Свидетельства RAG. Сбой базы не должен ломать цикл агента."""
+        if not question or not self.knowledge.available:
+            return None
+        try:
+            pack = await self.knowledge.pack_async(question)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._log_exception("knowledge", exc)
+            return None
+        if pack is None:
+            if self.knowledge.error:
+                self.log.write(
+                    "knowledge",
+                    event="unavailable",
+                    purpose=purpose,
+                    error=self.knowledge.error[:500],
+                )
+            return None
+        self.stats["knowledge_queries"] += 1
+        self.log.write(
+            "knowledge",
+            purpose=purpose,
+            question=question[:300],
+            verdict=pack.get("verdict"),
+            confidence=pack.get("confidence"),
+            sources=_pack_refs(pack)[:6],
+        )
+        return pack
+
     async def _control_context(
         self,
         snapshot: Snapshot,
         decision: RuleResult,
         messages: list[ChatMessage],
     ) -> dict[str, Any]:
+        # Свидетельства базы знаний подкладываются до сборки rule_decision в
+        # контекст: тогда rag_refs попадают и в prompt, и в журнал решений.
+        question = self._knowledge_question(decision, messages)
+        pack = await self._knowledge_pack(question, purpose="control")
+        if pack is not None:
+            decision.rag_refs = _pack_refs(pack)
         context: dict[str, Any] = {
             "mode": self.config.mode,
             "snapshot": snapshot.brief(),
@@ -1802,6 +1888,8 @@ class DomeAgent:
             ],
             "policy": self.gate.allowed_summary(),
         }
+        if pack is not None:
+            context["knowledge"] = pack
         if self._pending is not None:
             pending = self._pending.as_dict()
             pending["age_s"] = round(time.time() - self._pending.created_at, 1)
@@ -2102,7 +2190,17 @@ class DomeAgent:
             else:
                 status = "FAIL"
             error = str(result.get("error") or "")[:300]
-            lines.append(f"{status} {label}" + (f": {error}" if error else ""))
+            detail = ""
+            if command.tool == "knowledge" and result.get("ok"):
+                payload = result.get("result")
+                if isinstance(payload, Mapping):
+                    verdict = str(payload.get("verdict") or "")
+                    facts = payload.get("facts") or []
+                    first = str(facts[0]) if facts else ""
+                    detail = ": " + " ".join(
+                        part for part in (f"[{verdict}]", first[:200]) if part
+                    )
+            lines.append(f"{status} {label}{detail}" + (f": {error}" if error else ""))
         return "Результат:\n" + "\n".join(lines[:8])
 
     # ------------------------------------------------------------------
@@ -2135,6 +2233,13 @@ class DomeAgent:
             "task": self.state.task,
             "recent_chat": list(self._recent_chat),
         }
+        pack = await self._knowledge_pack(
+            self._knowledge_question(decision, []),
+            purpose="advice",
+        )
+        if pack is not None:
+            decision.rag_refs = _pack_refs(pack)
+            context["knowledge"] = pack
         try:
             advice = await self.advisor.advise(
                 context,

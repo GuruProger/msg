@@ -28,6 +28,7 @@ VALID_KINDS = {
     "verification",
     "message",
     "llm_call",
+    "knowledge",
     "error",
 }
 

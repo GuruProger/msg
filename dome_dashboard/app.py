@@ -662,6 +662,9 @@ def _build_summary(
             "dome_time": observation_record.get("dome_time"),
             "summary": observation_record.get("summary"),
             "metrics": _normalize_metrics(observation_record.get("metrics")),
+            "metric_sources": {
+                "co2_ppm": (observation_record.get("metrics") or {}).get("co2_source"),
+            },
             "anomalies": _string_list(observation_record.get("anomalies")),
         }
     metrics = (

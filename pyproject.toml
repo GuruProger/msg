@@ -10,21 +10,21 @@ dependencies = [
     "fastapi>=0.162.0",
     "httpx>=0.28",
     "uvicorn>=0.30",
+    "python-multipart>=0.0.32",
+    "requests>=2.34.2",
+    "websocket-client>=1.9.2",
     "websockets>=14.2",
 ]
 
 [project.scripts]
 dome-panel = "dome_control.cli:main"
 dome-agent = "dome_agent.agent:main"
-dome-dashboard = "dome_dashboard.__main__:main"
+dome-web = "dome_web.dashboard_backend:main"
 
 [tool.setuptools]
-packages = [
-    "dome_control",
-    "dome_agent",
-    "dome_dashboard",
-    "dome_dashboard.static",
-]
+packages = ["dome_control", "dome_agent", "dome_dashboard", "dome_web", "dome_rag", "dome_rag.builder"]
 
 [tool.setuptools.package-data]
-dome_dashboard = ["static/*"]
+dome_web = ["static/*.html", "static/*.css", "static/*.js", "static/*.svg", "static/*.json"]
+
+dome_rag = ["data/*.json", "data/curated/*.json", "build/*.json", "build/*.sqlite", "chunks/*.jsonl", "eval/*.jsonl", "corpus_manifest.json"]

@@ -199,3 +199,6 @@ diagnostics.json
 Dome_RAG-main/Keys/
 **/Keys/
 Dome_RAG-main/Logs/
+
+# Accidental nested repository snapshot
+dome_rag/msg-main/

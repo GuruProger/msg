@@ -2,7 +2,8 @@
 
 The model may propose or execute a very small set of Dome operations through
 :class:`DomeTool`.  There is intentionally no shell access: the only tools are
-``control``, ``query``, ``telemetry``, ``catalog`` and ``send_message``.
+``control``, ``query``, ``telemetry``, ``catalog``, ``send_message`` and the
+read-only ``knowledge`` lookup.
 
 ``normal`` mode treats model commands as proposals until the operator confirms
 them.  ``yolo`` mode executes them immediately.  A hard denylist is enforced in
@@ -29,11 +30,12 @@ HARD_DENY_ACTIONS: frozenset[str] = frozenset(
         "remove_part",
         "shutdown",
         "reboot",
+        "stop_job",  # Unsupported by the Dome API, including forced requests.
     }
 )
 
 CONTROL_TOOLS: frozenset[str] = frozenset(
-    {"control", "query", "telemetry", "catalog", "send_message"}
+    {"control", "query", "telemetry", "catalog", "send_message", "knowledge"}
 )
 
 MAX_COMMANDS = 6
@@ -323,8 +325,9 @@ class DomeTool:
     This class never imports ``subprocess`` and never accepts a shell command.
     """
 
-    def __init__(self, api: DomeAgentAPI) -> None:
+    def __init__(self, api: DomeAgentAPI, knowledge: Any | None = None) -> None:
         self.api = api
+        self.knowledge = knowledge
 
     async def execute(
         self,
@@ -441,6 +444,35 @@ class DomeTool:
                     "command": command.as_dict(),
                 }
             return {"ok": True, "command": command.as_dict(), "result": result}
+        if command.tool == "knowledge":
+            if self.knowledge is None:
+                return {
+                    "ok": False,
+                    "blocked": False,
+                    "forceable": False,
+                    "error": "knowledge service is disabled",
+                    "command": command.as_dict(),
+                }
+            question = command.query or command.text
+            try:
+                pack = await self.knowledge.pack_async(question)
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "blocked": False,
+                    "forceable": False,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "command": command.as_dict(),
+                }
+            if pack is None:
+                return {
+                    "ok": False,
+                    "blocked": False,
+                    "forceable": False,
+                    "error": "knowledge base is not available",
+                    "command": command.as_dict(),
+                }
+            return {"ok": True, "command": command.as_dict(), "result": pack}
         if command.tool == "send_message":
             try:
                 result = await self.api.post_message(

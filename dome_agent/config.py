@@ -20,6 +20,7 @@ AGENT_VERSION = "0.2.0"
 DEFAULT_NAME = "team3-agent"
 DEFAULT_DEEPSEEK_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_KB_DIR = Path(__file__).resolve().parent.parent / "dome_rag"
 
 _TRUE = {"1", "true", "yes", "on", "y"}
 _FALSE = {"0", "false", "no", "off", "n"}
@@ -124,9 +125,18 @@ class AgentConfig:
     guest_recheck_s: float = 60.0
     min_send_gap_s: float = 0.35
     run_seconds: float = 0.0
+    # База знаний (RAG).  Только чтение свидетельств: права и команды
+    # по-прежнему определяет policy gate, а не найденный текст.
+    kb_enabled: bool = True
+    kb_dir: Path = DEFAULT_KB_DIR
+    kb_db: Path | None = None
+    kb_max_cards: int = 6
+    kb_max_chars: int = 6000
     version: str = AGENT_VERSION
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "kb_dir", Path(self.kb_dir).expanduser())
+        object.__setattr__(self, "kb_db", Path(self.kb_db).expanduser() if self.kb_db else self.kb_dir / "build/kb.sqlite")
         url = _clean_url(self.dome_url)
         parts = urlsplit(url)
         if parts.scheme.casefold() not in {"ws", "wss"} or not parts.netloc:
@@ -152,6 +162,10 @@ class AgentConfig:
             raise ValueError("AGENT_LLM_MAX_CALLS_PER_HOUR must be >= 1")
         if self.run_seconds < 0:
             raise ValueError("AGENT_RUN_SECONDS must be >= 0")
+        if self.kb_max_cards < 1:
+            raise ValueError("AGENT_KB_MAX_CARDS must be >= 1")
+        if self.kb_max_chars < 800:
+            raise ValueError("AGENT_KB_MAX_CHARS must be >= 800")
         mode = str(self.mode or "").strip().casefold()
         if mode not in {"normal", "auto", "yolo"}:
             raise ValueError(
@@ -212,6 +226,15 @@ class AgentConfig:
             overrides.get(
                 "state_file",
                 _path_env("AGENT_STATE_FILE", log_dir / "agent_state.json"),
+            )
+        ).expanduser()
+        kb_dir = Path(
+            overrides.get("kb_dir", _path_env("AGENT_KB_DIR", DEFAULT_KB_DIR))
+        ).expanduser()
+        kb_db = Path(
+            overrides.get(
+                "kb_db",
+                _env("AGENT_KB_DB") or (kb_dir / "build" / "kb.sqlite"),
             )
         ).expanduser()
 
@@ -328,6 +351,23 @@ class AgentConfig:
                         _float_env("AGENT_RUN_SECONDS", 0.0, minimum=0.0),
                     )
                 ),
+                "kb_enabled": bool(
+                    overrides.get("kb_enabled", _bool_env("AGENT_KB_ENABLED", _bool_env("AGENT_KB", True)))
+                ),
+                "kb_dir": kb_dir,
+                "kb_db": kb_db,
+                "kb_max_cards": int(
+                    overrides.get(
+                        "kb_max_cards",
+                        _int_env("AGENT_KB_MAX_CARDS", 6, 1),
+                    )
+                ),
+                "kb_max_chars": int(
+                    overrides.get(
+                        "kb_max_chars",
+                        _int_env("AGENT_KB_MAX_CHARS", 6000, 800),
+                    )
+                ),
                 "version": str(overrides.get("version", AGENT_VERSION)),
             }
         )
@@ -355,6 +395,11 @@ class AgentConfig:
             "guest_recheck_s": self.guest_recheck_s,
             "min_send_gap_s": self.min_send_gap_s,
             "run_seconds": self.run_seconds,
+            "kb_enabled": self.kb_enabled,
+            "kb_dir": str(self.kb_dir),
+            "kb_db": str(self.kb_db),
+            "kb_max_cards": self.kb_max_cards,
+            "kb_max_chars": self.kb_max_chars,
         }
 
     def secrets(self) -> tuple[str, ...]:
