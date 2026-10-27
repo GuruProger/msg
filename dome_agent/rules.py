@@ -671,6 +671,17 @@ class RuleEngine:
                         min_interval_s=1800,
                     ))
                 continue
+            safety_block = self._task_safety_block(
+                snapshot, node_id, "cnc" if node_id == "cnc_01" else "printer"
+            )
+            if safety_block:
+                code, text = safety_block
+                resume_messages.append(OutgoingMessage(
+                    f"{node_id}: автоматический resume заблокирован. {text}",
+                    f"{node_id}:resume_blocked:{code}",
+                    min_interval_s=600,
+                ))
+                continue
             attempts = as_int(node.get("resume_attempts"), 0) or 0
             if attempts >= 3:
                 resume_messages.append(OutgoingMessage(

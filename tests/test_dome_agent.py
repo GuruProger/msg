@@ -819,6 +819,19 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_resume_waits_for_global_fire_readiness(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_VOC_BOX"}
+        )
+        data["nodes"]["fire_suppression_01"]["ready"] = False
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+        self.assertTrue(any(
+            message.dedupe_key == "printer_3d_01:resume_blocked:fire_not_ready"
+            for message in result.messages
+        ))
+
     def test_voc_hold_resumes_with_valid_airflow(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(
