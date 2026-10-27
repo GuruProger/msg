@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "msg"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.162.0",
@@ -20,6 +20,11 @@ dependencies = [
 dome-panel = "dome_control.cli:main"
 dome-agent = "dome_agent.agent:main"
 dome-web = "dome_web.dashboard_backend:main"
+dome-replay = "dome_agent.replay:main"
+dome-scenarios = "dome_agent.scenarios:main"
+dome-audit = "dome_agent.audit:main"
+dome-release = "dome_agent.release:main"
+dome-rehearsal = "dome_agent.rehearsal:main"
 
 [tool.setuptools]
 packages = ["dome_control", "dome_agent", "dome_web", "dome_rag", "dome_rag.builder"]

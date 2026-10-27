@@ -253,6 +253,7 @@ async def handler(
     *,
     key: str,
     revoke_after: int,
+    corrupt_after: int = 0,
     operator_task: str | None = None,
 ) -> None:
     raw = await ws.recv()
@@ -303,10 +304,14 @@ async def handler(
 
     tick = asyncio.create_task(ticker())
     seen = 0
+    corrupted = False
     try:
         async for raw in ws:
             message = json.loads(raw)
             seen += 1
+            if corrupt_after and not corrupted and seen >= corrupt_after:
+                corrupted = True
+                await ws.send("this-is-not-json{")
             if revoke_after and seen >= revoke_after:
                 await ws.send(
                     json.dumps(
@@ -474,6 +479,7 @@ async def main() -> None:
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--key", default="test-key")
     parser.add_argument("--revoke-after", type=int, default=0)
+    parser.add_argument("--corrupt-after", type=int, default=0)
     parser.add_argument("--operator-task", default=None)
     args = parser.parse_args()
 
@@ -482,6 +488,7 @@ async def main() -> None:
             ws,
             key=args.key,
             revoke_after=args.revoke_after,
+            corrupt_after=args.corrupt_after,
             operator_task=args.operator_task,
         )
 
