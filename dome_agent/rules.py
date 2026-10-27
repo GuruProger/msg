@@ -19,6 +19,21 @@ from .state import StateStore
 
 NO_VALUE = object()
 
+_SAFETY_ALERT_CODES = frozenset({
+    "CONDENSATE",
+    "CO",
+    "RADIATION",
+    "CHEM",
+    "SEISMIC",
+    "SEAL_LEAK",
+    "FUME_ALARM",
+    "ACCESS",
+    "SMOKE_OFFLINE",
+    "SMOKE_UNKNOWN",
+    "FIRE_UNKNOWN",
+    "FIRE_NOT_READY",
+})
+
 _PRODUCTION_BLOCKING_ALERTS = frozenset({
     "MACHINE_ERROR",
     "MACHINE_ALARM",
@@ -44,6 +59,20 @@ _PRODUCTION_BLOCKING_ALERTS = frozenset({
 
 def _state(value: Any) -> str:
     return str(value or "").strip().upper()
+
+
+def _task_has_pending_item(task: Mapping[str, Any] | None) -> bool:
+    """Return True when the task still has work that _task() must report."""
+    if not isinstance(task, Mapping):
+        return False
+    items = task.get("items")
+    if not isinstance(items, list):
+        return False
+    pending = {"PENDING", "HOMING", "STARTING", "NEEDS_INFO"}
+    return any(
+        isinstance(item, Mapping) and _state(item.get("status")) in pending
+        for item in items
+    )
 
 
 def _file_names(node: Mapping[str, Any]) -> list[str]:
@@ -935,6 +964,34 @@ class RuleEngine:
                 plan=["не запускать дизель без топлива", "сообщить Оператору"],
                 messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%), но топлива недостаточно. Автозапуск запрещён.", "battery_low_fuel", min_interval_s=1800)],
             )
+
+        # Critical environmental alarms without a dedicated recovery branch
+        # still need an operator-visible message.  If a task is waiting to
+        # start, let _task() report the precise blocking note instead.
+        if not _task_has_pending_item(task):
+            for alert in snapshot.alerts():
+                if alert.get("severity") != "critical":
+                    continue
+                code = _state(alert.get("code"))
+                if code not in _SAFETY_ALERT_CODES:
+                    continue
+                detail = str(alert.get("message") or code)
+                return RuleResult(
+                    situation=f"Критическая авария: {code}",
+                    cause=detail,
+                    confidence=0.95,
+                    evidence=[{
+                        "node": alert.get("node_id"),
+                        "param": "alert",
+                        "value": code,
+                    }],
+                    plan=["не запускать и не возобновлять производство", "сообщить Оператору"],
+                    messages=[OutgoingMessage(
+                        f"Критическая авария {code}: {detail}. Новые запуски и автоматическое возобновление заблокированы; нужна проверка Оператора.",
+                        f"safety_alert:{code}",
+                        min_interval_s=300,
+                    )],
+                )
 
         return None
 

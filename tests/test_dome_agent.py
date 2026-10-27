@@ -652,6 +652,17 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "fire_not_ready")
 
+    def test_critical_radiation_alert_is_reported_without_task(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["radiation_sensor_01"]["dose_rate_usv_h"] = 2.0
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertIn("RADIATION", result.situation)
+        self.assertTrue(any(
+            message.dedupe_key == "safety_alert:RADIATION"
+            for message in result.messages
+        ))
+        self.assertNotIn("остановлено", result.messages[0].text)
+
     def test_start_blocked_by_radiation_alarm(self) -> None:
         data = base_telemetry()
         data["nodes"]["radiation_sensor_01"]["dose_rate_usv_h"] = 2.0
