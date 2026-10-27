@@ -65,14 +65,14 @@ def _interlock_tripped(snapshot: Snapshot, name: str) -> bool:
     """
     raw = snapshot.node("dome_automation_01").get("interlocks")
     if raw is None:
-        return False
+        return True
     if not isinstance(raw, (Mapping, list, tuple)):
         return True
     if isinstance(raw, (list, tuple)) and raw and not normalize_interlocks(raw):
         return True
     interlock = _interlock(snapshot, name)
     if not interlock:
-        return False
+        return True
     return _state(interlock.get("state")) not in {"ARMED", "CLEAR", "OK", "NORMAL"}
 
 
@@ -811,8 +811,11 @@ class RuleEngine:
         if reason == "IL_CO2":
             if snapshot.co2.false_alarm or snapshot.co2.real_event:
                 return False, "CO2 ещё требует разбирательства"
+            state = _interlock_state(snapshot, "IL_CO2")
+            if not state:
+                return False, "IL_CO2 неизвестен; автоматический resume запрещён"
             if _interlock_tripped(snapshot, "IL_CO2"):
-                return False, "IL_CO2 всё ещё TRIPPED"
+                return False, f"IL_CO2 {state}"
             co2_ppm = snapshot.co2.chosen_ppm
             if co2_ppm is None:
                 return False, "CO2 неизвестен; автоматический resume запрещён"

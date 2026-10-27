@@ -450,6 +450,24 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "reset_interlock" for action in result.actions))
 
+    def test_co2_hold_waits_for_known_interlock(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["dome_automation_01"]["interlocks"].pop("IL_CO2", None)
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CO2"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
+    def test_co2_hold_waits_for_interlock_telemetry(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["dome_automation_01"].pop("interlocks", None)
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CO2"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
     def test_missing_voltage_does_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["smart_panel_01"]["bus_voltage_v"] = None
