@@ -481,6 +481,12 @@ class RuleEngine:
                 if snapshot.co2.real_event
                 else "не подтверждён вторым датчиком"
             )
+            if actions:
+                vent_text = "Усиливаю вентиляцию"
+            elif _state(vent.get("state")) == "ON" and _state(vent.get("mode")) == "FRESH_AIR":
+                vent_text = "Вентиляция уже работает на свежем воздухе"
+            else:
+                vent_text = "Вентиляция требует усиления"
             return RuleResult(
                 situation="CO2 выше порога",
                 cause="подтверждённое повышение CO2",
@@ -492,7 +498,7 @@ class RuleEngine:
                 plan=["усилить вентиляцию", "не возобновлять станки до снижения CO2"],
                 actions=actions,
                 messages=[OutgoingMessage(
-                    f"CO2 {snapshot.co2.chosen_ppm:.0f} ppm {confirmation}. Включаю вентиляцию; станки остаются на паузе.",
+                    f"CO2 {snapshot.co2.chosen_ppm:.0f} ppm {confirmation}. {vent_text}; станки остаются на паузе.",
                     "co2_real",
                     min_interval_s=300,
                 )],

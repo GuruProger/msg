@@ -377,7 +377,7 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(real_co2_telemetry()))
         self.assertTrue(result.messages)
         text = result.messages[0].text
-        self.assertIn("Включаю", text)
+        self.assertIn("Усиливаю", text)
         self.assertNotIn("Включена", text)
 
         data = base_telemetry()
@@ -387,6 +387,17 @@ class RuleTests(unittest.TestCase):
         text = result.messages[0].text
         self.assertIn("Отключаю", text)
         self.assertNotIn("Отключил", text)
+
+    def test_real_co2_with_fresh_air_already_on_reports_fact(self) -> None:
+        data = real_co2_telemetry()
+        data["nodes"]["supply_ventilation_01"].update(
+            {"state": "ON", "mode": "FRESH_AIR"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertEqual(result.actions, [])
+        text = result.messages[0].text
+        self.assertIn("уже работает", text)
+        self.assertNotIn("Усиливаю", text)
 
     def test_line_alarm_message_does_not_crash(self) -> None:
         data = base_telemetry()
