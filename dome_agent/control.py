@@ -298,6 +298,7 @@ class PendingProposal:
     awaiting_force: bool = False
     analysis: str = ""
     risk: str = "medium"
+    after_id: int = 0
 
     @property
     def signature(self) -> tuple[str, ...]:
@@ -315,6 +316,7 @@ class PendingProposal:
             "awaiting_force": self.awaiting_force,
             "analysis": self.analysis,
             "risk": self.risk,
+            "after_id": self.after_id,
             "age_s": None,
         }
 

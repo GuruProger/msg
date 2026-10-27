@@ -19,9 +19,23 @@ FILENAME_TOKEN_RE = re.compile(r"(?:файл|file)\s*[:\-]?\s*([A-Za-zА-Яа-я
 
 PRINT_WORDS = ("напечата", "распечата", "печать", "принтер", "print", "3d")
 CNC_WORDS = ("фрезер", "чпу", "cnc", "mill", "гравир", "плат")
+PRINT_TARGET_WORDS = ("принтер", "печат", "3d", "print", "gcode", "гкод")
+CNC_TARGET_WORDS = ("фрезер", "чпу", "cnc", "mill", "шпиндел", "станок")
+STOP_WORDS = ("останов", "стоп", "прекрат", "выключ", "отключ", "обесточ", "stop", "halt")
+PAUSE_WORDS = ("пауза", "паузу", "приостанов", "pause", "hold")
+STOP_NEGATION_RE = re.compile(
+    r"\bне\s+(?:\w+\s+){0,2}(?:останавлива|выключа|отключа|обесточива|прекраща|ставь|ставьте|трогай)"
+)
+MACHINE_REQUESTS: dict[str, tuple[str, str]] = {
+    "print_stop": ("printer_3d_01", "stop"),
+    "print_pause": ("printer_3d_01", "pause"),
+    "cnc_stop": ("cnc_01", "stop"),
+    "cnc_pause": ("cnc_01", "pause"),
+}
+MACHINE_LINES: dict[str, int] = {"printer_3d_01": 3, "cnc_01": 4}
 POWER_WORDS = ("лини", "лайн", "line", "обесточ", "запитан", "щит")
 ON_WORDS = ("включ", "подай", "запитан", "on", "восстанов")
-OFF_WORDS = ("выключ", "отключ", "обесточ", "сними", "off")
+OFF_WORDS = ("выключ", "отключ", "обесточ", "сними", "останов", "стоп", "off")
 REPORT_WORDS = ("проверь", "доложи", "статус", "отчёт", "отчет", "report", "что происходит", "осмотри")
 MONITOR_WORDS = ("смена", "следи", "поддерживай", "работай", "дежурь", "shift", "monitor")
 TASK_WORDS = ("задание", "task", "нужно", "надо", "прошу", "please")
@@ -231,11 +245,30 @@ def extract_line(clause: str) -> int | None:
     return number if 1 <= number <= 8 else None
 
 
+def _machine_target(value: str) -> str | None:
+    if any(word in value for word in CNC_TARGET_WORDS):
+        return "cnc"
+    if any(word in value for word in PRINT_TARGET_WORDS):
+        return "print"
+    return None
+
+
 def _classify_clause(clause: str) -> TaskItem | None:
     value = clause.casefold()
     file = extract_file(clause)
     line = extract_line(clause)
     has_action_word = any(word in value for word in TASK_WORDS)
+    # The Dome API cannot pause or stop a job: pause is set by the dome
+    # automation or the operator, and only line power is available to the
+    # agent.  A stop/pause request must never fall through to ``print`` and
+    # start the job the operator asked to stop.
+    machine = _machine_target(value)
+    if machine and not STOP_NEGATION_RE.search(value):
+        # Check pause first: "приостанови" contains the stop stem.
+        if any(word in value for word in PAUSE_WORDS):
+            return TaskItem(kind=f"{machine}_pause", text=clause, file=file)
+        if any(word in value for word in STOP_WORDS):
+            return TaskItem(kind=f"{machine}_stop", text=clause, file=file)
     if any(word in value for word in PRINT_WORDS):
         if file or any(word in value for word in ("напечата", "распечата", "печать", "print")):
             return TaskItem(kind="print", text=clause, file=file)

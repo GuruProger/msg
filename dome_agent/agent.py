@@ -33,7 +33,13 @@ from dome_control.client import (
 )
 
 from .analysis import Snapshot
-from .chat import ChatMessage, new_operator_messages, parse_operator_task
+from .chat import (
+    MACHINE_LINES,
+    MACHINE_REQUESTS,
+    ChatMessage,
+    new_operator_messages,
+    parse_operator_task,
+)
 from .config import AgentConfig
 from .control import (
     HARD_DENY_ACTIONS,
@@ -685,6 +691,11 @@ class DomeAgent:
         await self._poll_chat(snapshot)
         await self._notify_recovered_actions()
 
+        # An operator-facing proposal is honoured in every mode: a stop/pause
+        # request always requires an explicit confirmation, including auto.
+        if self._pending is not None:
+            await self._handle_pending()
+
         decision = self.rules.decide(snapshot, self.state.task)
         if decision.task_changed and decision.task is not None:
             self._save_task(decision.task)
@@ -695,9 +706,6 @@ class DomeAgent:
             self._maybe_observe(snapshot, decision)
             await self._schedule_llm_control(snapshot, decision)
             return
-
-        if self.config.mode == "normal":
-            await self._handle_pending()
 
         if self._should_log_decision(snapshot, decision):
             decision_ref = self._log_decision(snapshot, decision)
@@ -827,12 +835,29 @@ class DomeAgent:
             operator_messages = recent
 
         for message in operator_messages:
-            self._on_operator_message(message)
+            await self._on_operator_message(message, snapshot)
 
         if max_id > self.state.last_message_id:
             self._mark_message(max_id)
 
-    def _on_operator_message(self, message: ChatMessage) -> None:
+    def _drop_incoming(self, message_id: int) -> None:
+        """Keep the request that created a proposal out of the reply queue.
+
+        Otherwise a message like ``stop print`` would also look like a reply
+        to the confirmation question it just produced.
+        """
+        self._incoming = [
+            item for item in self._incoming if item.id != message_id
+        ]
+
+    def _max_incoming_id(self) -> int:
+        return max((item.id for item in self._incoming), default=0)
+
+    async def _on_operator_message(
+        self,
+        message: ChatMessage,
+        snapshot: Snapshot | None = None,
+    ) -> None:
         self.stats["chat_messages"] += 1
         self._incoming.append(message)
         self._recent_chat.append({"direction": "in", "text": message.text[:700]})
@@ -847,6 +872,23 @@ class DomeAgent:
             message_id=message.id,
         )
         task = parse_operator_task(message)
+        request = (
+            next(
+                (
+                    item
+                    for item in task.items
+                    if item.kind in MACHINE_REQUESTS
+                ),
+                None,
+            )
+            if task is not None
+            else None
+        )
+        if request is not None:
+            self._drop_incoming(message.id)
+            node_id, action = MACHINE_REQUESTS[request.kind]
+            await self._request_machine_stop(message, node_id, action, snapshot)
+            return
         if task is not None and task.items:
             self._save_task(task.as_dict())
             self.log.write(
@@ -872,6 +914,105 @@ class DomeAgent:
             self.state.mark_message(message_id)
         except OSError as exc:
             self._log_exception("state_chat", exc)
+
+    async def _request_machine_stop(
+        self,
+        message: ChatMessage,
+        node_id: str,
+        action: str,
+        snapshot: Snapshot | None,
+    ) -> None:
+        """Answer a stop/pause request with a confirmed power action.
+
+        The Dome API exposes no pause or stop command: pause is set by the
+        dome automation or the operator, and only the power line is available
+        to the agent.  Stopping therefore means switching the line off, which
+        aborts the job, so it always requires an explicit confirmation.
+        """
+        line = MACHINE_LINES[node_id]
+        machine = "принтера" if node_id == "printer_3d_01" else "фрезера"
+        machine_name = "Принтер" if node_id == "printer_3d_01" else "Фрезер"
+        node = snapshot.node(node_id) if snapshot is not None else {}
+        state = str(node.get("state") or "неизвестно").strip().upper()
+        active_states = (
+            {"PRINTING", "PAUSED"}
+            if node_id == "printer_3d_01"
+            else {"RUNNING", "PAUSED", "HOMING", "BUSY"}
+        )
+        if state not in active_states:
+            await self._send_operator_message(
+                f"{machine_name} не выполняет задание ({state}); останавливать нечего.",
+                dedupe_key=f"stop-idle:{message.id}",
+                min_interval_s=0,
+            )
+            return
+        if not self.config.control_enabled:
+            await self._send_operator_message(
+                "Управление выключено (AGENT_ALLOW_CONTROL=0), остановить станок не могу. "
+                "Остановите задание на пульте купола.",
+                dedupe_key=f"stop-no-control:{message.id}",
+                min_interval_s=0,
+            )
+            return
+        if self._pending is not None:
+            await self._send_operator_message(
+                "Есть ожидающее предложение. Сначала подтвердите или отмените его.",
+                dedupe_key="pending-busy",
+                min_interval_s=30,
+            )
+            return
+        if action == "pause":
+            intro = (
+                "Паузу ставит автоматика купола или Оператор с пульта: Dome API "
+                "не принимает pause. Могу выполнить аварийную остановку, сняв "
+                f"питание с линии {line}. "
+            )
+        else:
+            intro = (
+                "Команды stop в Dome API нет: остановить можно только сняв "
+                f"питание с линии {line} (щиток). "
+            )
+        text = (
+            f"{intro}Текущее задание {machine} будет прервано и потеряно."
+            "\n\nПодтвердить остановку? (да / отмена)"
+        )
+        self._pending = PendingProposal(
+            commands=(
+                ModelCommand(
+                    tool="control",
+                    node_id="smart_panel_01",
+                    action="line_off",
+                    value=line,
+                    reason=f"operator {action}: {message.text[:200]}",
+                ),
+            ),
+            message=text,
+            created_at=time.time(),
+            source="operator_stop",
+            risk="high",
+            after_id=message.id,
+        )
+        self.stats["proposals"] += 1
+        self.log.write(
+            "decision",
+            situation="Запрошена остановка станка",
+            cause=message.text[:500],
+            confidence=0.9,
+            evidence=[{"node": node_id, "param": "state", "value": state}],
+            plan=[
+                "запросить подтверждение Оператора",
+                f"при подтверждении снять питание с линии {line}",
+            ],
+            source="operator",
+            risk="high",
+            action=action,
+            pending_after_id=message.id,
+        )
+        await self._send_operator_message(
+            text,
+            dedupe_key=f"stop:{message.id}",
+            min_interval_s=0,
+        )
 
     # ------------------------------------------------------------------
     # decisions, actions, messages
@@ -1771,6 +1912,10 @@ class DomeAgent:
         remaining: list[ChatMessage] = []
         handled_reply = False
         for message in self._incoming:
+            if message.id <= pending.after_id:
+                # Older chat must not confirm a proposal it predates.
+                remaining.append(message)
+                continue
             if not handled_reply:
                 kind = _reply_kind(
                     message.text,
@@ -1842,6 +1987,7 @@ class DomeAgent:
                 awaiting_force=True,
                 analysis=pending.analysis,
                 risk=pending.risk,
+                after_id=self._max_incoming_id(),
             )
             await self._send_operator_message(
                 "Заблокировано политикой: "
@@ -1892,6 +2038,7 @@ class DomeAgent:
             created_at=time.time(),
             source="protective",
             awaiting_force=True,
+            after_id=self._max_incoming_id(),
         )
         self.stats["proposals"] += 1
         await self._send_operator_message(
@@ -2009,6 +2156,7 @@ class DomeAgent:
                     source="llm",
                     analysis=model_decision.analysis,
                     risk=model_decision.risk,
+                    after_id=self._max_incoming_id(),
                 )
                 if self._pending is not None:
                     # Never replace an operator-facing proposal behind their

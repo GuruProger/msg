@@ -147,7 +147,11 @@ class CommandGate:
         if dry_run:
             return GateDecision(True, "dry-run: no command is sent")
         if str(action.action) == "stop_job":
-            return GateDecision(False, "action 'stop_job' is not allowed: unsupported by API; use documented pause_job")
+            return GateDecision(
+                False,
+                "action 'stop_job' is not allowed: the Dome API has no stop_job; "
+                "a confirmed line_off is the only stop path",
+            )
         if self.competition and str(action.action) in COMPETITION_DENY_ACTIONS:
             return GateDecision(
                 False,
