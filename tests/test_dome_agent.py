@@ -683,6 +683,28 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "voc_high")
 
+    def test_start_blocked_when_seismic_event_detected(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["seysmo_01"]["quake_detected"] = True
+        task = {
+            "message_id": 17,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "SEISMIC")
+
+    def test_start_blocked_when_chemical_alarm_active(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["chem_sensor_01"]["concentration_ppm"] = 25.0
+        task = {
+            "message_id": 18,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "CHEM")
+
     def test_diesel_autostart_disabled_does_not_start(self) -> None:
         data = base_telemetry()
         data["nodes"]["battery_01"]["soc_pct"] = 15.0

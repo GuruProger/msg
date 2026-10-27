@@ -1404,7 +1404,7 @@ class RuleEngine:
         for alert in snapshot.alerts():
             if alert.get("severity") != "critical":
                 continue
-            if alert.get("code") in {"MACHINE_ERROR", "MACHINE_ALARM", "MACHINE_HOLD_ALARM", "FIRE", "FIRE_NOT_READY", "SMOKE", "CONDENSATE", "CO2_TRIP"}:
+            if alert.get("code") in {"MACHINE_ERROR", "MACHINE_ALARM", "MACHINE_HOLD_ALARM", "FIRE", "FIRE_NOT_READY", "SMOKE", "CONDENSATE", "CO2_TRIP", "SEISMIC", "CHEM"}:
                 return str(alert.get("code")), str(alert.get("message"))
         return None
 
