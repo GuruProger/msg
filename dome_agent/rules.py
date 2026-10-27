@@ -157,6 +157,24 @@ def _air_quality_block(snapshot: Snapshot) -> tuple[str, str] | None:
     return None
 
 
+def _diesel_ready(snapshot: Snapshot) -> bool:
+    if not snapshot.online("dizel_1"):
+        return False
+    diesel = snapshot.node("dizel_1")
+    if diesel.get("fault_code") or diesel.get("fault_reason"):
+        return False
+    return _state(diesel.get("state")) not in {"FAULT", "ERROR", "OFFLINE", "BLOCKED"}
+
+
+def _fuel_quality_ok(snapshot: Snapshot) -> bool:
+    if not snapshot.online("fuel_tank_01"):
+        return False
+    tank = snapshot.node("fuel_tank_01")
+    quality = _state(tank.get("fuel_quality"))
+    state = _state(tank.get("state"))
+    return quality in {"", "GOOD", "OK", "NORMAL"} and state in {"", "NORMAL", "OK"}
+
+
 def _fume_ready(snapshot: Snapshot) -> bool:
     if not snapshot.online("fume_extraction_01"):
         return False
@@ -807,26 +825,65 @@ class RuleEngine:
         deficit = energy.get("deficit_w") or 0.0
         grid = _state(energy.get("grid_state"))
         diesel_state = _state(energy.get("diesel_state"))
-        fuel = energy.get("fuel_pct") or 0.0
-        if soc is not None and soc < 20 and (deficit > 0 or grid not in {"AVAILABLE", "UP", "OK"}) and diesel_state not in {"ON", "RUNNING"} and fuel > 10:
-            action = self._action(
-                "diesel_start_low_soc",
-                "dizel_1",
-                "turn_on",
-                reason=f"SOC {soc:.1f}% и дефицит/нет сети",
-                cooldown_s=600,
-                priority=78,
-            )
-            if action:
+        fuel = as_float(energy.get("fuel_pct"))
+        low_energy = soc is not None and soc < 20 and (deficit > 0 or grid not in {"AVAILABLE", "UP", "OK"})
+        if low_energy and diesel_state not in {"ON", "RUNNING"}:
+            panel = snapshot.node("dome_automation_01")
+            autostart = snapshot.online("dome_automation_01") and as_bool(panel.get("diesel_autostart"), True)
+            if not autostart:
                 return RuleResult(
                     situation="Низкий заряд АКБ",
-                    cause="нет достаточной генерации/сети",
-                    confidence=0.8,
+                    cause="автозапуск дизель-генератора отключён",
+                    confidence=0.9,
                     evidence=[{"node": "battery_01", "param": "soc_pct", "value": soc}, {"node": "solar_inverter_01", "param": "power_deficit_w", "value": deficit}],
-                    plan=["запустить дизель-генератор", "следить за SOC"],
-                    actions=[action],
-                    messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%). Запускаю дизель-генератор.", "battery_low", min_interval_s=600)],
+                    plan=["не запускать дизель автоматически", "сообщить Оператору"],
+                    messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%), но автозапуск дизель-генератора отключён. Нужно решение Оператора.", "battery_low_autostart_off", min_interval_s=1800)],
                 )
+            if not _diesel_ready(snapshot):
+                return RuleResult(
+                    situation="Низкий заряд АКБ",
+                    cause="дизель-генератор неисправен или недоступен",
+                    confidence=0.9,
+                    evidence=[{"node": "battery_01", "param": "soc_pct", "value": soc}, {"node": "dizel_1", "param": "fault_code", "value": snapshot.node("dizel_1").get("fault_code")}],
+                    plan=["не запускать неисправный дизель автоматически", "сообщить Оператору"],
+                    messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%), но дизель-генератор неисправен или недоступен. Автозапуск запрещён.", "battery_low_diesel_fault", min_interval_s=1800)],
+                )
+            if not _fuel_quality_ok(snapshot):
+                return RuleResult(
+                    situation="Низкий заряд АКБ",
+                    cause="топливо не соответствует требованиям",
+                    confidence=0.9,
+                    evidence=[{"node": "battery_01", "param": "soc_pct", "value": soc}, {"node": "fuel_tank_01", "param": "fuel_quality", "value": snapshot.node("fuel_tank_01").get("fuel_quality")}],
+                    plan=["не запускать дизель на непригодном топливе", "сообщить Оператору"],
+                    messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%), но качество топлива не подтверждено. Автозапуск запрещён.", "battery_low_fuel_bad", min_interval_s=1800)],
+                )
+            if fuel is not None and fuel > 10:
+                action = self._action(
+                    "diesel_start_low_soc",
+                    "dizel_1",
+                    "turn_on",
+                    reason=f"SOC {soc:.1f}% и дефицит/нет сети",
+                    cooldown_s=600,
+                    priority=78,
+                )
+                if action:
+                    return RuleResult(
+                        situation="Низкий заряд АКБ",
+                        cause="нет достаточной генерации/сети",
+                        confidence=0.8,
+                        evidence=[{"node": "battery_01", "param": "soc_pct", "value": soc}, {"node": "solar_inverter_01", "param": "power_deficit_w", "value": deficit}],
+                        plan=["запустить дизель-генератор", "следить за SOC"],
+                        actions=[action],
+                        messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%). Запускаю дизель-генератор.", "battery_low", min_interval_s=600)],
+                    )
+            return RuleResult(
+                situation="Низкий заряд АКБ",
+                cause="уровень топлива неизвестен или ниже резерва",
+                confidence=0.9,
+                evidence=[{"node": "battery_01", "param": "soc_pct", "value": soc}, {"node": "fuel_tank_01", "param": "level_pct", "value": fuel}],
+                plan=["не запускать дизель без топлива", "сообщить Оператору"],
+                messages=[OutgoingMessage(f"Низкий заряд АКБ ({soc:.1f}%), но топлива недостаточно. Автозапуск запрещён.", "battery_low_fuel", min_interval_s=1800)],
+            )
 
         return None
 

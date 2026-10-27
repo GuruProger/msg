@@ -683,6 +683,43 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "voc_high")
 
+    def test_diesel_autostart_disabled_does_not_start(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["battery_01"]["soc_pct"] = 15.0
+        data["nodes"]["solar_inverter_01"].update({"grid_state": "DOWN", "power_deficit_w": 300.0})
+        data["nodes"]["dizel_1"]["state"] = "OFF"
+        data["nodes"]["dome_automation_01"]["diesel_autostart"] = False
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.node_id == "dizel_1" for action in result.actions))
+        self.assertTrue(any("автозапуск" in message.text.lower() for message in result.messages))
+
+    def test_diesel_fault_blocks_autostart(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["battery_01"]["soc_pct"] = 15.0
+        data["nodes"]["solar_inverter_01"].update({"grid_state": "DOWN", "power_deficit_w": 300.0})
+        data["nodes"]["dizel_1"].update({"state": "FAULT", "fault_code": "E10"})
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.node_id == "dizel_1" for action in result.actions))
+        self.assertTrue(any("неисправ" in message.text.lower() for message in result.messages))
+
+    def test_diesel_bad_fuel_blocks_autostart(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["battery_01"]["soc_pct"] = 15.0
+        data["nodes"]["solar_inverter_01"].update({"grid_state": "DOWN", "power_deficit_w": 300.0})
+        data["nodes"]["dizel_1"]["state"] = "OFF"
+        data["nodes"]["fuel_tank_01"]["fuel_quality"] = "BAD"
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.node_id == "dizel_1" for action in result.actions))
+        self.assertTrue(any("топлив" in message.text.lower() for message in result.messages))
+
+    def test_diesel_starts_when_low_soc_and_ready(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["battery_01"]["soc_pct"] = 15.0
+        data["nodes"]["solar_inverter_01"].update({"grid_state": "DOWN", "power_deficit_w": 300.0})
+        data["nodes"]["dizel_1"]["state"] = "OFF"
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertTrue(any(action.node_id == "dizel_1" and action.action == "turn_on" for action in result.actions))
+
     def test_missing_voc_does_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(
