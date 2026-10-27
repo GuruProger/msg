@@ -385,6 +385,7 @@ class StateStore:
         *,
         min_interval_s: float = 900.0,
         now: float | None = None,
+        record: bool = True,
     ) -> bool:
         """Return true when this exact operator notification is due again."""
         now = time.time() if now is None else now
@@ -398,6 +399,22 @@ class StateStore:
         previous = str(entry.get("text") or "")
         if previous == text and last and (now - last) < min_interval_s:
             return False
+        if record:
+            self.record_notification(key, text, now=now)
+        return True
+
+    def record_notification(
+        self,
+        key: str,
+        text: str,
+        *,
+        now: float | None = None,
+    ) -> None:
+        now = time.time() if now is None else now
+        requests = self.data.get("operator_requests")
+        if not isinstance(requests, dict):
+            requests = {}
+            self.data["operator_requests"] = requests
         requests[key] = {"at": float(now), "text": text}
         if len(requests) > 80:
             ordered = sorted(
@@ -411,7 +428,6 @@ class StateStore:
             )[:80]
             self.data["operator_requests"] = dict(ordered)
         self.save()
-        return True
 
     # --- CO2 primary override ----------------------------------------
 

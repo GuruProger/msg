@@ -1726,6 +1726,31 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
                 any("не выполнена" in item["text"] for item in api.sent_messages)
             )
 
+    async def test_failed_operator_message_is_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            api.post_error = RuntimeError("network down")
+            self.assertFalse(
+                await agent._send_operator_message(
+                    "hello",
+                    dedupe_key="retry-message",
+                    min_interval_s=3600.0,
+                )
+            )
+            self.assertFalse(api.sent_messages)
+            api.post_error = None
+            self.assertTrue(
+                await agent._send_operator_message(
+                    "hello",
+                    dedupe_key="retry-message",
+                    min_interval_s=3600.0,
+                )
+            )
+            self.assertEqual(len(api.sent_messages), 1)
+
     async def test_duplicate_pending_action_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=False)

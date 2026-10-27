@@ -1444,6 +1444,12 @@ class DomeAgent:
                 action=action.action,
             )
 
+    def _record_notification(self, key: str, text: str) -> None:
+        try:
+            self.state.record_notification(key, text)
+        except OSError as exc:
+            self._log_exception("state_message", exc)
+
     async def _send_operator_message(
         self,
         text: str,
@@ -1455,11 +1461,13 @@ class DomeAgent:
         text = text.strip()
         if not text:
             return False
+        key = f"msg:{dedupe_key}"
         try:
             due = self.state.should_notify(
-                f"msg:{dedupe_key}",
+                key,
                 text,
                 min_interval_s=min_interval_s,
+                record=False,
             )
         except OSError as exc:
             self._log_exception("state_message", exc)
@@ -1476,6 +1484,7 @@ class DomeAgent:
                 sent=False,
             )
             self._recent_chat.append({"direction": "out", "text": text[:700]})
+            self._record_notification(key, text)
             return True
         await self._chat_throttle()
         try:
@@ -1485,6 +1494,7 @@ class DomeAgent:
         except Exception as exc:
             self._log_exception("chat_post", exc)
             return False
+        self._record_notification(key, text)
         self.stats["messages"] += 1
         self._sent_message_times.append(time.monotonic())
         self._recent_chat.append({"direction": "out", "text": text[:700]})
