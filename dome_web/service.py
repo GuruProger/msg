@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from .panel_log import PanelLog
+
 STATIC = Path(__file__).parent / "static"
 HARD_DENY = {"block_automation", "block_interlock", "set_thresholds", "unlock_door", "remove_part", "shutdown", "reboot"}
 
@@ -100,6 +102,7 @@ class DashboardService:
         policy_file = Path(values.get("AGENT_POLICY_FILE", "dome_policy.json"))
         self.policy_path = policy_file if policy_file.is_absolute() else self.root / policy_file
         self.log_dir = self.root / "logs"
+        self.panel_log = PanelLog(self.log_dir, redact=self.redact)
         if demo:
             data = json.loads((STATIC / "demo.json").read_text(encoding="utf-8"))
             self.catalog = data.pop("catalog")
@@ -127,6 +130,10 @@ class DashboardService:
 
     def close(self):
         self.knowledge.close()
+        try:
+            self.panel_log.close()
+        except Exception:
+            pass
         if not self.thread:
             if not self.loop.is_closed():
                 self.loop.close()

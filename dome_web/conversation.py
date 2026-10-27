@@ -118,6 +118,19 @@ class Conversation:
             reply = s.redact({"role": "assistant", "text": text, "time": time.time(), "engine": engine, "verdict": evidence.get("verdict") if evidence else "UNAVAILABLE", "requires_live": bool(evidence and evidence.get("requires_live")), "sources": [{"title": x.get("title"), "source": x.get("source")} for x in sources]})
             self.messages.append(reply)
             s.event("decision", source="agent_chat", situation="Ответ в чате агента", engine=engine)
+            try:
+                s.panel_log.write(
+                    "chat",
+                    question=question,
+                    answer=reply.get("text"),
+                    engine=engine,
+                    verdict=reply.get("verdict"),
+                    requires_live=reply.get("requires_live"),
+                    sources=reply.get("sources") or [],
+                    knowledge_available=bool((context.get("knowledge") or {}).get("available")),
+                )
+            except Exception as exc:
+                s.event("error", where="panel_log", error=f"{type(exc).__name__}: {exc}"[:300])
             return {"ok": True, "reply": reply}
         finally:
             self.busy = False

@@ -716,3 +716,19 @@ class KB:
 
     def close(self) -> None:
         self.con.close()
+
+    def __enter__(self) -> "KB":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # Best effort: tests and CLI helpers occasionally drop a KB without
+        # calling close(); do not let that leak a sqlite connection.
+        connection = getattr(self, "con", None)
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
