@@ -193,6 +193,15 @@ class StateStore:
                     continue
         return int(message_id) in handled
 
+    def reset_chat_cursor(self) -> bool:
+        """Forget the cursor after the server clears the shared chat."""
+        if self.last_message_id == 0 and not self.data.get("handled_message_ids"):
+            return False
+        self.data["last_message_id"] = 0
+        self.data["handled_message_ids"] = []
+        self.save()
+        return True
+
     # --- action / notification guards --------------------------------
 
     def begin_action(

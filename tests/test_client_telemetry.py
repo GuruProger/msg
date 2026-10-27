@@ -1,10 +1,36 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import unittest
 
 from dome_control.client import DomeClient, DomeTimeout, retry_policy
+
+
+class _SocketFeed:
+    def __init__(self, messages: list[str]) -> None:
+        self._messages = list(messages)
+
+    def __aiter__(self) -> "_SocketFeed":
+        return self
+
+    async def __anext__(self) -> str:
+        if not self._messages:
+            raise StopAsyncIteration
+        return self._messages.pop(0)
+
+
+class MeetingClearTests(unittest.IsolatedAsyncioTestCase):
+    async def test_meeting_cleared_bumps_generation_and_drops_queue(self) -> None:
+        client = DomeClient("ws://example.test", "key", min_send_gap=0.0)
+        client._meeting_messages.put_nowait({"id": 1, "text": "old"})
+        client._ws = _SocketFeed([json.dumps({"type": "meeting_cleared"})])
+
+        await client._reader()
+
+        self.assertEqual(client.meeting_generation, 1)
+        self.assertTrue(client._meeting_messages.empty())
 
 
 class TelemetryFreshnessTests(unittest.IsolatedAsyncioTestCase):

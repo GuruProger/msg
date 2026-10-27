@@ -306,6 +306,14 @@ class DomeAgentAPI:
         catalog = await self.catalog(refresh=refresh)
         return filter_catalog(catalog, system=system, search=search)
 
+    @property
+    def meeting_generation(self) -> int:
+        """Generation of the chat history; changes when the server clears it."""
+        try:
+            return int(getattr(self.client, "meeting_generation", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
     async def get_telemetry(
         self,
         node_id: str | None = None,

@@ -49,6 +49,7 @@ from .state import StateStore
 from .verification import ExpectedEffect, expected_effect, meaningful_diff
 
 CHAT_POLL_INTERVAL_S = 3.0
+CHAT_RECONCILE_INTERVAL_S = 300.0
 TELEMETRY_MAX_AGE_S = 5.0
 LOOP_INTERVAL_S = 1.0
 LLM_MESSAGE_MIN_INTERVAL_S = 600.0
@@ -141,6 +142,8 @@ class DomeAgent:
         self._team: int | None = None
         self._shutdown_done = False
         self._last_chat_poll = 0.0
+        self._last_chat_reconcile = 0.0
+        self._chat_generation_seen = self._chat_generation()
         self._last_decision_at = 0.0
         self._last_observation_at = 0.0
         self._last_situation: str | None = None
@@ -369,6 +372,7 @@ class DomeAgent:
             },
         )
         self._last_chat_poll = 0.0
+        self._last_chat_reconcile = 0.0
 
     async def _detect_role(self, auth: Any) -> tuple[str | None, int | None]:
         role: Any = None
@@ -494,15 +498,48 @@ class DomeAgent:
     # chat
     # ------------------------------------------------------------------
 
+    def _chat_generation(self) -> int:
+        try:
+            return max(0, int(getattr(self.api, "meeting_generation", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _reset_chat_cursor(self, reason: str) -> None:
+        try:
+            changed = self.state.reset_chat_cursor()
+        except OSError as exc:
+            self._log_exception("state_chat", exc)
+            return
+        if not changed:
+            return
+        self.log.write(
+            "decision",
+            situation="История чата очищена",
+            cause=reason,
+            confidence=1.0,
+            evidence=[],
+            plan=["перечитать чат с начала"],
+            source="chat_epoch",
+        )
+
     async def _poll_chat(self, snapshot: Snapshot) -> None:
         now = time.monotonic()
         if now - self._last_chat_poll < CHAT_POLL_INTERVAL_S:
             return
         self._last_chat_poll = now
+
+        generation = self._chat_generation()
+        if generation != self._chat_generation_seen:
+            self._chat_generation_seen = generation
+            self._reset_chat_cursor("сервер очистил историю чата")
+
         after_id = self.state.last_message_id
+        reconcile = now - self._last_chat_reconcile >= CHAT_RECONCILE_INTERVAL_S
+        if reconcile:
+            self._last_chat_reconcile = now
         try:
             raw = await self.api.read_messages(
-                since_id=after_id if after_id > 0 else None,
+                since_id=None if (after_id <= 0 or reconcile) else after_id,
                 limit=50,
             )
         except (DomeSessionRevoked, DomeConnectionError, DomeTimeout):
@@ -510,13 +547,23 @@ class DomeAgent:
         except DomeError as exc:
             self._log_exception("chat_read", exc)
             return
+
+        raw = [message for message in raw if isinstance(message, Mapping)]
+        max_id = 0
+        for message in raw:
+            try:
+                max_id = max(max_id, int(message.get("id") or 0))
+            except (TypeError, ValueError):
+                continue
+        if reconcile and after_id > 0 and max_id < after_id:
+            self._reset_chat_cursor(
+                f"полное чтение чата заканчивается на id {max_id}, "
+                f"локальный курсор {after_id}"
+            )
+            after_id = 0
         if not raw:
             return
 
-        raw = [message for message in raw if isinstance(message, Mapping)]
-        if not raw:
-            return
-        max_id = max((int(message.get("id") or 0) for message in raw), default=0)
         operator_messages = new_operator_messages(
             raw,
             after_id=after_id,

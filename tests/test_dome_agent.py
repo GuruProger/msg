@@ -957,6 +957,59 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(agent.state.get("pending_actions"), {})
             await api.close()
 
+    async def test_meeting_clear_resets_stale_chat_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(
+                base_telemetry(),
+                messages=[operator_message(1, "Напечатать bracket_v2.gcode")],
+            )
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent.state.mark_message(5)
+            agent._last_chat_poll = time.monotonic() - 10.0
+            agent._last_chat_reconcile = time.monotonic()
+            api.meeting_generation = 1
+
+            await agent._poll_chat(Snapshot(base_telemetry()))
+
+            self.assertEqual(agent.state.last_message_id, 1)
+            self.assertIsNotNone(agent.state.task)
+            records = read_logs(config.log_dir)
+            reset = [
+                record
+                for record in records
+                if record["kind"] == "decision"
+                and record.get("source") == "chat_epoch"
+            ]
+            self.assertTrue(reset)
+
+    async def test_chat_reconcile_detects_restarted_id_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = FakeAPI(
+                base_telemetry(),
+                messages=[operator_message(1, "Напечатать bracket_v2.gcode")],
+            )
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent.state.mark_message(5)
+            agent._last_chat_poll = time.monotonic() - 10.0
+            agent._last_chat_reconcile = time.monotonic() - 400.0
+
+            await agent._poll_chat(Snapshot(base_telemetry()))
+
+            self.assertEqual(agent.state.last_message_id, 1)
+            self.assertIsNotNone(agent.state.task)
+            records = read_logs(config.log_dir)
+            reset = [
+                record
+                for record in records
+                if record["kind"] == "decision"
+                and record.get("source") == "chat_epoch"
+            ]
+            self.assertTrue(reset)
+
     async def test_dry_run_false_co2_never_sends_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=True, run_seconds=0.7)

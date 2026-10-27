@@ -104,6 +104,7 @@ class DomeClient:
         self._ids = itertools.count(1)
         self._telemetry_event = asyncio.Event()
         self._meeting_messages: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._meeting_generation = 0
         self._closed = False
         self._callback_tasks: set[asyncio.Task[Any]] = set()
 
@@ -278,6 +279,11 @@ class DomeClient:
                     self._telemetry_event.set()
                 elif kind == "meeting_message":
                     self._meeting_messages.put_nowait(message.get("message") or {})
+                elif kind == "meeting_cleared":
+                    self._meeting_generation += 1
+                    while not self._meeting_messages.empty():
+                        with suppress(asyncio.QueueEmpty):
+                            self._meeting_messages.get_nowait()
                 elif kind == "session_revoked":
                     self.revoked_reason = str(message.get("reason") or "session revoked")
                     self._closed = True
@@ -508,6 +514,11 @@ class DomeClient:
             return await asyncio.wait_for(self._meeting_messages.get(), timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise DomeTimeout("meeting message did not arrive") from exc
+
+    @property
+    def meeting_generation(self) -> int:
+        """Monotonic counter incremented when the server clears the chat."""
+        return self._meeting_generation
 
     @property
     def nodes(self) -> dict[str, Any]:
