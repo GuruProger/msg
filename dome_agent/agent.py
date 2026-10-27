@@ -1387,7 +1387,6 @@ class DomeAgent:
         if not self._recovered_actions:
             return
         entries = self._recovered_actions
-        self._recovered_actions = []
         labels: list[str] = []
         for entry in entries[:5]:
             request = entry.get("request")
@@ -1404,13 +1403,16 @@ class DomeAgent:
             f"{', '.join(labels)}{suffix}. Проверьте состояние вручную."
         )
         try:
-            await self._send_operator_message(
+            delivered = await self._send_operator_message(
                 text,
                 dedupe_key="action_reconcile",
                 min_interval_s=0.0,
             )
         except Exception as exc:
             self._log_exception("action_reconcile_notify", exc)
+            return
+        if delivered:
+            self._recovered_actions = []
 
     async def _notify_action_failure(
         self,
@@ -1444,10 +1446,10 @@ class DomeAgent:
         dedupe_key: str,
         min_interval_s: float,
         to: str = "operator",
-    ) -> None:
+    ) -> bool:
         text = text.strip()
         if not text:
-            return
+            return False
         try:
             due = self.state.should_notify(
                 f"msg:{dedupe_key}",
@@ -1458,7 +1460,7 @@ class DomeAgent:
             self._log_exception("state_message", exc)
             due = True
         if not due:
-            return
+            return True
         if self.config.dry_run:
             self.log.write(
                 "message",
@@ -1469,7 +1471,7 @@ class DomeAgent:
                 sent=False,
             )
             self._recent_chat.append({"direction": "out", "text": text[:700]})
-            return
+            return True
         await self._chat_throttle()
         try:
             await self.api.post_message(text, to=to, name=self.config.agent_name)
@@ -1477,7 +1479,7 @@ class DomeAgent:
             raise
         except Exception as exc:
             self._log_exception("chat_post", exc)
-            return
+            return False
         self.stats["messages"] += 1
         self._sent_message_times.append(time.monotonic())
         self._recent_chat.append({"direction": "out", "text": text[:700]})
@@ -1488,6 +1490,7 @@ class DomeAgent:
             text=text[:2000],
             sent=True,
         )
+        return True
 
     async def _chat_throttle(self) -> None:
         now = time.monotonic()

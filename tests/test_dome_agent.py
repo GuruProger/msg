@@ -107,6 +107,7 @@ class FakeAPI:
         self.messages = list(messages or [])
         self.actions: list[dict] = []
         self.sent_messages: list[dict] = []
+        self.post_error: Exception | None = None
         self.closed = False
         self.client = SimpleNamespace(role="team", team=3, url="ws://fake")
 
@@ -199,6 +200,8 @@ class FakeAPI:
         }
 
     async def post_message(self, text: str, *, to: str | None = "operator", name: str | None = None) -> dict:
+        if self.post_error is not None:
+            raise self.post_error
         self.sent_messages.append({"text": text, "to": to, "name": name})
         return {"success": True}
 
@@ -1101,6 +1104,36 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
             text = api.sent_messages[0]["text"]
             self.assertIn("неизвестным исходом", text)
             self.assertIn("smart_panel_01/line_off", text)
+            self.assertEqual(agent._recovered_actions, [])
+
+    async def test_recovered_action_intent_retries_after_post_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent.state.begin_action(
+                "line8-off",
+                request={
+                    "type": "control",
+                    "node_id": "smart_panel_01",
+                    "action": "line_off",
+                    "value": 8,
+                },
+                ref=77,
+                expected="smart_panel_01.lines[8].state = OFF",
+                now=100.0,
+            )
+            agent._reconcile_pending_actions()
+
+            api.post_error = RuntimeError("network down")
+            await agent._notify_recovered_actions()
+            self.assertFalse(api.sent_messages)
+            self.assertTrue(agent._recovered_actions)
+
+            api.post_error = None
+            await agent._notify_recovered_actions()
+            self.assertTrue(api.sent_messages)
             self.assertEqual(agent._recovered_actions, [])
 
     async def test_meeting_clear_resets_stale_chat_cursor(self) -> None:
