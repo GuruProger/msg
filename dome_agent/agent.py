@@ -1794,8 +1794,6 @@ class DomeAgent:
             "hard_denied_actions": sorted(HARD_DENY_ACTIONS),
             "auto_protective": [
                 "smart_panel_01.line_off",
-                "printer_3d_01.stop_job",
-                "cnc_01.stop_job",
                 "solar_inverter_01.set_fan=ON",
                 "supply_ventilation_01.turn_on",
                 "fume_extraction_01.turn_on",

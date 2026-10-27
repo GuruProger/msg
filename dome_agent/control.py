@@ -43,8 +43,6 @@ _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 _PROTECTIVE_PAIRS: frozenset[tuple[str, str]] = frozenset(
     {
         ("smart_panel_01", "line_off"),
-        ("printer_3d_01", "stop_job"),
-        ("cnc_01", "stop_job"),
         ("solar_inverter_01", "set_fan"),
         ("supply_ventilation_01", "turn_on"),
         ("fume_extraction_01", "turn_on"),

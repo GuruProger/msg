@@ -2228,6 +2228,18 @@ class GateTests(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertIn("denied", decision.reason)
 
+    def test_policy_rejects_unsupported_stop_job(self) -> None:
+        gate = CommandGate(REPO / "dome_policy.json", control_enabled=True)
+        action = ActionSpec(
+            key="stop",
+            node_id="printer_3d_01",
+            action="stop_job",
+            reason="test",
+        )
+        decision = gate.check(action)
+        self.assertFalse(decision.allowed)
+        self.assertIn("not allowed", decision.reason)
+
     def test_policy_rejects_unknown_node(self) -> None:
         gate = CommandGate(REPO / "dome_policy.json", control_enabled=True)
         action = ActionSpec(
@@ -2353,6 +2365,15 @@ class ControlTests(unittest.IsolatedAsyncioTestCase):
                     node_id="smart_panel_01",
                     action="line_on",
                     value=8,
+                )
+            )
+        )
+        self.assertFalse(
+            is_auto_protective(
+                ModelCommand(
+                    tool="control",
+                    node_id="printer_3d_01",
+                    action="stop_job",
                 )
             )
         )

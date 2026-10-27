@@ -52,7 +52,7 @@ Optional:
 - `AGENT_MODE=normal|auto|yolo` — operating mode (default `normal`).
   - `normal` — the LLM analyzes telemetry/chat and proposes actions; nothing
     is executed until the operator confirms in Dome chat. The approved
-    protective exceptions (`line_off`, `stop_job`, `turn_off`, `set_fan=ON`,
+    protective exceptions (`line_off`, `turn_off`, `set_fan=ON`,
     ventilation/fume `turn_on`, `set_mode=FRESH_AIR`) run automatically.
     Blocked proposals require an explicit force confirmation.
   - `auto` — deterministic rules only; legacy/fallback mode for tests or when
