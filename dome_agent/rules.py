@@ -86,6 +86,27 @@ def _powder_present(snapshot: Snapshot) -> bool:
     return False
 
 
+def _smoke_data_known(snapshot: Snapshot) -> bool:
+    for node_id in ("smoke_detector_01", "smoke_detector_02"):
+        if not snapshot.online(node_id):
+            return False
+        if snapshot.node(node_id).get("smoke_detected") is None:
+            return False
+    return True
+
+
+def _fire_ready(snapshot: Snapshot) -> bool:
+    if not snapshot.online("fire_suppression_01"):
+        return False
+    fire = snapshot.node("fire_suppression_01")
+    return (
+        not as_bool(fire.get("alarm"))
+        and not as_bool(fire.get("automation_blocked"))
+        and as_bool(fire.get("ready"))
+        and _state(fire.get("state")) == "READY"
+    )
+
+
 def _condensate_present(snapshot: Snapshot) -> bool:
     climate = snapshot.node("climate_sensor_01")
     humidity = as_float(climate.get("humidity_pct"))
@@ -801,11 +822,8 @@ class RuleEngine:
                 return False, "конденсат/влажность ещё выше нормы"
             return True, "влажность и точка росы в норме"
         if reason == "IL_SMOKE":
-            for node_id in ("smoke_detector_01", "smoke_detector_02"):
-                if not snapshot.online(node_id):
-                    return False, f"{node_id} недоступен; автоматический resume запрещён"
-                if snapshot.node(node_id).get("smoke_detected") is None:
-                    return False, f"{node_id}: состояние дыма неизвестно; автоматический resume запрещён"
+            if not _smoke_data_known(snapshot):
+                return False, "дымовые датчики недоступны или состояние дыма неизвестно; автоматический resume запрещён"
             if _powder_present(snapshot):
                 return False, "дым ещё обнаружен"
             state = _interlock_state(snapshot, "IL_SMOKE")
@@ -813,16 +831,8 @@ class RuleEngine:
                 return False, "IL_SMOKE неизвестен; автоматический resume запрещён"
             if _interlock_tripped(snapshot, "IL_SMOKE"):
                 return False, f"IL_SMOKE {state}; нужен сброс Оператором"
-            if not snapshot.online("fire_suppression_01"):
-                return False, "пожарная автоматика недоступна; автоматический resume запрещён"
-            fire = snapshot.node("fire_suppression_01")
-            if (
-                as_bool(fire.get("alarm"))
-                or as_bool(fire.get("automation_blocked"))
-                or as_bool(fire.get("ready")) is not True
-                or _state(fire.get("state")) != "READY"
-            ):
-                return False, "пожарная автоматика не готова"
+            if not _fire_ready(snapshot):
+                return False, "пожарная автоматика не готова или недоступна"
             return True, "дым не обнаружен, IL_SMOKE сброшен"
         if reason == "IL_VOC_BOX":
             if not snapshot.online("air_quality_sensor_01"):
@@ -1281,8 +1291,12 @@ class RuleEngine:
     def _task_safety_block(self, snapshot: Snapshot, node_id: str, kind: str) -> tuple[str, str] | None:
         if snapshot.co2.real_event or (snapshot.co2.chosen_ppm or 0) >= 2000:
             return "co2_high", f"CO2 {(snapshot.co2.chosen_ppm or 0):.0f} ppm: запуск производства запрещён."
+        if not _smoke_data_known(snapshot):
+            return "smoke_unknown", "Дымовые датчики недоступны или их показания неизвестны: запуск производства запрещён."
         if _powder_present(snapshot):
             return "smoke", "Дым в куполе: запуск производства запрещён."
+        if not _fire_ready(snapshot):
+            return "fire_not_ready", "Пожарная автоматика не готова или недоступна: запуск производства запрещён."
         if _condensate_present(snapshot):
             return "condensate", "Риск конденсата: запуск станков запрещён."
         if node_id == "cnc_01":
