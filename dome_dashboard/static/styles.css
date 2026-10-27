@@ -55,6 +55,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   scrollbar-color: var(--line-strong) transparent;
@@ -2396,7 +2400,7 @@ body[data-ready="true"] .connect {
 @media (max-width: 560px) {
   .topbar__inner {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "brand status"
       "actions actions"
