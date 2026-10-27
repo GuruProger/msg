@@ -591,13 +591,19 @@ class Snapshot:
 
         for node_id in ("smoke_detector_01", "smoke_detector_02"):
             node = self.node(node_id)
-            if as_bool(node.get("smoke_detected")) or _state(node.get("alarm_state")) not in {"", "NORMAL"}:
+            if not self.online(node_id):
+                add("critical", "SMOKE_OFFLINE", node_id, "Smoke detector telemetry unavailable")
+            elif node.get("smoke_detected") is None:
+                add("critical", "SMOKE_UNKNOWN", node_id, "Smoke detector reading unavailable")
+            elif as_bool(node.get("smoke_detected")) or _state(node.get("alarm_state")) not in {"", "NORMAL"}:
                 add("critical", "SMOKE", node_id, "Smoke detected", zone=node.get("zone"))
 
         fire = self.node("fire_suppression_01")
-        if as_bool(fire.get("alarm")) or _state(fire.get("state")) == "DISCHARGED":
+        if not self.online("fire_suppression_01"):
+            add("critical", "FIRE_UNKNOWN", "fire_suppression_01", "Fire suppression telemetry unavailable")
+        elif as_bool(fire.get("alarm")) or _state(fire.get("state")) == "DISCHARGED":
             add("critical", "FIRE", "fire_suppression_01", "Fire suppression alarm")
-        elif fire.get("fault_code") or fire.get("ready") is False:
+        elif fire.get("fault_code") or not as_bool(fire.get("ready")):
             add("critical", "FIRE_NOT_READY", "fire_suppression_01", "Fire suppression is not ready", fault=fire.get("fault_code"))
 
         if self.co2.real_event:
@@ -632,9 +638,13 @@ class Snapshot:
         humidity = as_float(climate.get("humidity_pct"))
         temp = as_float(climate.get("temperature_c"))
         dew = as_float(climate.get("dew_point_c"))
-        if humidity is not None and humidity > 90:
+        if not self.online("climate_sensor_01"):
+            add("warning", "CLIMATE_UNKNOWN", "climate_sensor_01", "Climate telemetry unavailable")
+        elif humidity is None or temp is None or dew is None:
+            add("warning", "CLIMATE_UNKNOWN", "climate_sensor_01", "Climate telemetry incomplete")
+        elif humidity > 90:
             add("critical", "CONDENSATE", "climate_sensor_01", f"Humidity {humidity:.0f}% > 90%")
-        elif temp is not None and dew is not None and (temp - dew) < 1.0:
+        elif (temp - dew) < 1.0:
             add("critical", "CONDENSATE", "climate_sensor_01", f"Dew point margin {temp - dew:.2f} C < 1 C")
 
         air = self.node("air_quality_sensor_01")

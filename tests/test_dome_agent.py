@@ -542,6 +542,28 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertFalse(any(action.action == "resume" for action in result.actions))
 
+    def test_alerts_report_unavailable_safety_telemetry(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["smoke_detector_01"].pop("smoke_detected", None)
+        data["nodes"]["smoke_detector_02"]["online"] = False
+        data["nodes"]["fire_suppression_01"]["online"] = False
+        data["nodes"]["climate_sensor_01"]["humidity_pct"] = None
+        alerts = Snapshot(data).alerts()
+        codes = {alert["code"] for alert in alerts}
+        self.assertIn("SMOKE_UNKNOWN", codes)
+        self.assertIn("SMOKE_OFFLINE", codes)
+        self.assertIn("FIRE_UNKNOWN", codes)
+        self.assertIn("CLIMATE_UNKNOWN", codes)
+        for alert in alerts:
+            if alert["code"] in {"SMOKE_UNKNOWN", "SMOKE_OFFLINE", "FIRE_UNKNOWN"}:
+                self.assertEqual(alert["severity"], "critical")
+
+    def test_alerts_report_fire_not_ready(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["fire_suppression_01"]["ready"] = False
+        alerts = Snapshot(data).alerts()
+        self.assertTrue(any(alert["code"] == "FIRE_NOT_READY" for alert in alerts))
+
     def test_start_blocked_when_smoke_data_unknown(self) -> None:
         data = base_telemetry()
         data["nodes"]["smoke_detector_02"]["online"] = False
