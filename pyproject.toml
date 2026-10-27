@@ -9,15 +9,22 @@ requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.162.0",
     "httpx>=0.28",
-    "python-multipart>=0.0.32",
-    "requests>=2.34.2",
-    "websocket-client>=1.9.2",
+    "uvicorn>=0.30",
     "websockets>=14.2",
 ]
 
 [project.scripts]
 dome-panel = "dome_control.cli:main"
 dome-agent = "dome_agent.agent:main"
+dome-dashboard = "dome_dashboard.__main__:main"
 
 [tool.setuptools]
-packages = ["dome_control", "dome_agent"]
+packages = [
+    "dome_control",
+    "dome_agent",
+    "dome_dashboard",
+    "dome_dashboard.static",
+]
+
+[tool.setuptools.package-data]
+dome_dashboard = ["static/*"]
