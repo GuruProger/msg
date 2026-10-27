@@ -2098,7 +2098,35 @@ class VerificationTests(unittest.TestCase):
 
     def test_metadata_only_diff_is_not_a_physical_effect(self) -> None:
         self.assertFalse(meaningful_diff({"node_id": "smart_panel_01", "action": "line_off"}))
+        self.assertFalse(
+            meaningful_diff(
+                {"status": {"before": {"updated_at": 1}, "after": {"updated_at": 2}}}
+            )
+        )
         self.assertTrue(meaningful_diff({"line": 8, "state": "OFF"}))
+        self.assertTrue(
+            meaningful_diff({"state": {"before": "ON", "after": "OFF"}})
+        )
+
+    def test_stop_and_turn_off_effects_require_stopped_state(self) -> None:
+        stop = expected_effect("printer_3d_01", "stop_job")
+        self.assertFalse(stop.check({"state": "PRINTING", "paused": False}))
+        self.assertFalse(stop.check({"state": "PAUSED", "paused": True}))
+        self.assertTrue(stop.check({"state": "IDLE", "paused": False}))
+
+        fume_off = expected_effect("fume_extraction_01", "turn_off")
+        self.assertFalse(fume_off.check({"enabled": True, "state": "ON"}))
+        self.assertTrue(fume_off.check({"enabled": False, "state": "OFF"}))
+
+        vent_off = expected_effect("supply_ventilation_01", "turn_off")
+        self.assertFalse(vent_off.check({"state": "ON"}))
+        self.assertTrue(vent_off.check({"state": "OFF"}))
+
+    def test_reconnect_effect_requires_online_node(self) -> None:
+        reconnect = expected_effect("printer_3d_01", "reconnect")
+        self.assertFalse(reconnect.check({"online": False, "state": "UNKNOWN"}))
+        self.assertTrue(reconnect.check({"online": True, "state": "IDLE"}))
+        self.assertIsNone(reconnect.check({"state": "IDLE"}))
 
     def test_expected_effect_line_and_unknown_action(self) -> None:
         effect = expected_effect("smart_panel_01", "line_off", 8)

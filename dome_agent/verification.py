@@ -26,6 +26,11 @@ _DIFF_METADATA_KEYS = {
 }
 
 
+def _metadata_only_mapping(value: Mapping[Any, Any]) -> bool:
+    keys = {str(key).casefold() for key in value}
+    return bool(keys) and keys <= _DIFF_METADATA_KEYS
+
+
 def meaningful_diff(value: Any) -> bool:
     """Return True only when a diff contains a non-metadata change.
 
@@ -35,7 +40,28 @@ def meaningful_diff(value: Any) -> bool:
     """
     if not isinstance(value, Mapping):
         return False
-    return any(str(key).casefold() not in _DIFF_METADATA_KEYS for key in value)
+    for key, change in value.items():
+        if str(key).casefold() in _DIFF_METADATA_KEYS:
+            continue
+        if isinstance(change, Mapping) and "before" in change and "after" in change:
+            old = change.get("before")
+            new = change.get("after")
+            if old == new:
+                continue
+            if (
+                isinstance(old, Mapping)
+                and isinstance(new, Mapping)
+                and _metadata_only_mapping(old)
+                and _metadata_only_mapping(new)
+            ):
+                continue
+            return True
+        if isinstance(change, Mapping):
+            if meaningful_diff(change):
+                return True
+            continue
+        return True
+    return False
 
 
 def _upper(value: Any) -> str:
@@ -98,6 +124,21 @@ def _action_confirmed(
         if "enabled" in node:
             return as_bool(node.get("enabled"))
         return state in {"ON", "RUNNING", "ACTIVE", "AVAILABLE"}
+    if name == "turn_off":
+        if "enabled" in node:
+            return not as_bool(node.get("enabled"))
+        if state:
+            return state in {"OFF", "STOPPED", "DISABLED"}
+        return None
+    if name == "stop_job":
+        return state in {"IDLE", "STOPPED", "COMPLETED", "CANCELLED", "CANCELED"} and not as_bool(
+            node.get("paused")
+        )
+    if name == "reconnect":
+        online = node.get("online")
+        if online is None:
+            return None
+        return as_bool(online) and state not in {"UNKNOWN", "OFFLINE"}
     if name == "set_mode":
         return _upper(node.get("mode")) == _upper(value)
     if name == "set_primary_sensor":
@@ -151,8 +192,12 @@ def _observed(node_id: str, action: str, value: Any, node: Any) -> dict[str, Any
             "current_a": line.get("current_a"),
             "power_w": line.get("power_w"),
         }
-    if name in {"start_job", "resume", "home"}:
+    if name in {"start_job", "resume", "home", "stop_job"}:
         keys = ("state", "paused", "homed", "file_name", "progress_pct", "hold_level", "hold_reason")
+    elif name == "turn_off":
+        keys = ("state", "enabled", "power_w", "fan_rpm", "fan_current_a")
+    elif name == "reconnect":
+        keys = ("state", "online", "status")
     elif name in {"turn_on", "set_mode"}:
         keys = ("state", "enabled", "mode", "airflow_pct")
     elif name == "set_fan":
