@@ -455,6 +455,7 @@ class Snapshot:
         self.received_at = time.time() if received_at is None else received_at
         self.clock = _game_clock(self.game_time)
         self.co2 = analyze_co2(self.nodes, override=co2_override)
+        self._alerts_cache: list[dict[str, Any]] | None = None
 
     def node(self, node_id: str) -> dict[str, Any]:
         return _dict(self.nodes.get(node_id))
@@ -569,7 +570,13 @@ class Snapshot:
         return result
 
     def alerts(self) -> list[dict[str, Any]]:
-        """Collect actionable alarms, most severe first."""
+        """Collect actionable alarms, most severe first.
+
+        The result is cached for this immutable telemetry frame.  Callers get
+        a shallow copy so a stray list mutation cannot poison later decisions.
+        """
+        if self._alerts_cache is not None:
+            return list(self._alerts_cache)
         alerts: list[dict[str, Any]] = []
 
         def add(
@@ -806,7 +813,8 @@ class Snapshot:
                 add("warning", "INTERLOCK", "dome_automation_01", f"{name} {state}: {interlock.get('reason') or interlock.get('title') or ''}".strip())
 
         alerts.sort(key=lambda alert: -_SEVERITY_ORDER.get(str(alert.get("severity")), 0))
-        return alerts
+        self._alerts_cache = alerts
+        return list(alerts)
 
     def brief(self) -> dict[str, Any]:
         """Compact, structured snapshot for logs and LLM prompts."""
