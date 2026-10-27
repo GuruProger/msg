@@ -21,6 +21,22 @@ The agent is **read-only by default**. To run the normal control mode, set
 `python -m dome_agent` is equivalent. `dome-agent` is installed by
 `pip install .`.
 
+## Read-only dashboard
+
+The dashboard is a local viewer over the agent JSONL log and persistent state.
+It never sends Dome commands, writes chat messages, or mutates agent files.
+
+```bash
+python -m dome_dashboard
+# or, after pip install .:
+dome-dashboard --host 127.0.0.1 --port 8080
+```
+
+It reads `AGENT_LOG_DIR` and `AGENT_STATE_FILE` when set, otherwise `logs/` and
+`logs/agent_state.json`. Override the bind address with `DASHBOARD_HOST` and
+`DASHBOARD_PORT`. Secrets and secret-looking fields are removed before data is
+returned; use `/api/demo` for an offline sample.
+
 ## Configuration
 
 Required:
@@ -55,6 +71,8 @@ Optional:
 - `AGENT_RUN_SECONDS=N` — stop cleanly after N seconds; `0` runs indefinitely.
 - `AGENT_LOG_DIR`, `AGENT_STATE_FILE` — log and restart-state locations.
 - `AGENT_MIN_SEND_GAP=0.35` — enforces at most five commands/requests per second.
+- `DASHBOARD_HOST`, `DASHBOARD_PORT` — dashboard bind address and port
+  (defaults: `127.0.0.1:8080`).
 
 ## Runtime behavior
 
@@ -88,9 +106,9 @@ Optional:
 
 Each run creates `logs/agent_<run_id>.jsonl` with flushed JSONL records:
 `start`, `connection`, `observation`, `decision`, `action`, `action_blocked`,
-`verification`, `message`, `llm_call`, `error`, and `stop`. `decision.source`
-shows `rules` or `llm`; `action.source` shows `yolo`, `confirmed`,
-`confirmed_force`, or `auto`. Secrets are redacted before writing.
+`verification`, `message`, `llm_call`, `error`, `action_queue`, and `stop`.
+`decision.source` shows `rules` or `llm`; `action.source` shows `yolo`,
+`confirmed`, `confirmed_force`, or `auto`. Secrets are redacted before writing.
 A normal SIGINT/SIGTERM shutdown always writes the final `stop` record.
 
 ## Tests
@@ -118,3 +136,4 @@ verification.
 - `dome_agent/state.py` — restart-safe JSON state.
 - `dome_agent/logging.py` — JSONL audit log.
 - `dome_control/` — WebSocket client, validation, CLI, and agent API facade.
+- `dome_dashboard/` — read-only FastAPI API and mission-control frontend.
