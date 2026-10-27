@@ -564,6 +564,28 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "fire_not_ready")
 
+    def test_start_blocked_when_climate_data_unknown(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["climate_sensor_01"]["humidity_pct"] = None
+        task = {
+            "message_id": 10,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "climate_unknown")
+
+    def test_start_blocked_when_climate_sensor_offline(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["climate_sensor_01"]["online"] = False
+        task = {
+            "message_id": 11,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "climate_unknown")
+
     def test_missing_voc_does_not_resume(self) -> None:
         data = base_telemetry()
         data["nodes"]["printer_3d_01"].update(

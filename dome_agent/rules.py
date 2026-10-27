@@ -121,6 +121,17 @@ def _condensate_present(snapshot: Snapshot) -> bool:
     )
 
 
+def _climate_data_known(snapshot: Snapshot) -> bool:
+    if not snapshot.online("climate_sensor_01"):
+        return False
+    climate = snapshot.node("climate_sensor_01")
+    return (
+        as_float(climate.get("humidity_pct")) is not None
+        and as_float(climate.get("temperature_c")) is not None
+        and as_float(climate.get("dew_point_c")) is not None
+    )
+
+
 def _fume_ready(snapshot: Snapshot) -> bool:
     if not snapshot.online("fume_extraction_01"):
         return False
@@ -809,15 +820,8 @@ class RuleEngine:
                 return False, "CO2 ещё высокий"
             return True, "CO2 в норме"
         if reason == "IL_CONDENSATE":
-            climate = snapshot.node("climate_sensor_01")
-            if not snapshot.online("climate_sensor_01"):
-                return False, "датчик климата недоступен; автоматический resume запрещён"
-            if (
-                as_float(climate.get("humidity_pct")) is None
-                or as_float(climate.get("temperature_c")) is None
-                or as_float(climate.get("dew_point_c")) is None
-            ):
-                return False, "влажность/точка росы неизвестны; автоматический resume запрещён"
+            if not _climate_data_known(snapshot):
+                return False, "данные климата недоступны или неполны; автоматический resume запрещён"
             if _condensate_present(snapshot):
                 return False, "конденсат/влажность ещё выше нормы"
             return True, "влажность и точка росы в норме"
@@ -1297,6 +1301,8 @@ class RuleEngine:
             return "smoke", "Дым в куполе: запуск производства запрещён."
         if not _fire_ready(snapshot):
             return "fire_not_ready", "Пожарная автоматика не готова или недоступна: запуск производства запрещён."
+        if not _climate_data_known(snapshot):
+            return "climate_unknown", "Данные климата недоступны или неполны: запуск производства запрещён."
         if _condensate_present(snapshot):
             return "condensate", "Риск конденсата: запуск станков запрещён."
         if node_id == "cnc_01":
