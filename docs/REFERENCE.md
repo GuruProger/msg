@@ -38,8 +38,6 @@
 | `AGENT_KB_DB` | `<kb_dir>/build/kb.sqlite` | путь | SQLite-база знаний |
 | `AGENT_KB_MAX_CARDS` | `6` | ≥1 | Максимум карточек в пакете |
 | `AGENT_KB_MAX_CHARS` | `6000` | ≥800 | Лимит размера пакета, символов |
-| `DASHBOARD_HOST` | `127.0.0.1` | host | Bind дашборда |
-| `DASHBOARD_PORT` | `8080` | int | Порт дашборда; нечисловое значение → 8080 |
 
 Bool-значения: `1/true/yes/on/y` и `0/false/no/off/n` (case-insensitive).
 Пустая строка для bool означает default.
@@ -198,7 +196,7 @@ Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy
 ### 4.3. Метрики observation
 
 `observation.metrics` содержит `co2_ppm`, `co2_source`, `co2_false_alarm`,
-`soc_pct`, `printer`, `cnc`, `alerts`, `task`. Дашборд нормализует публичные
+`soc_pct`, `printer`, `cnc`, `alerts`, `task`. API журнала нормализует публичные
 ключи `co2_ppm`, `soc_pct`, `printer`, `cnc`, `fume`, `power_w`; отсутствующие
 значения становятся `null`.
 
@@ -250,17 +248,16 @@ Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy
 - режим `0600`; родительская директория создаётся;
 - атомарная запись: temp + `fsync` + `os.replace` + `fsync` директории;
 - при повреждении — копия `.corrupt-<ns>` и сброс к default;
-- `pending_actions` не экспортируется дашбордом;
-- `updated_at` не хранится, дашборд подставляет mtime;
+- `pending_actions` не экспортируется API журнала;
+- `updated_at` не хранится, API журнала подставляет mtime;
 - параллельная работа двух агентов с одним state не поддерживается.
 
-## 6. HTTP API дашборда
+## 6. HTTP API журнала
 
-Запуск: `python -m dome_dashboard [--host HOST] [--port PORT] [--reload]`
-(или `dome-dashboard` после `pip install .`). `--reload` предназначен для
-разработки и перезапускает uvicorn при изменении файлов.
+Запуск: `python -m dome_web [--backend-root PATH] [--port PORT]`
+(или `dome-web` после `pip install .`).
 
-Дашборд — read-only. Все `/api/*` ответы получают `Cache-Control: no-store`.
+API — read-only. Все `/api/*` ответы получают `Cache-Control: no-store`.
 Ошибки чтения лога/каталога возвращаются как HTTP 500; неверный `run_id` — 400.
 
 ### `GET /api/health`
@@ -425,7 +422,7 @@ python -m unittest discover -s tests
 Дополнительно:
 
 ```bash
-python -m compileall -q dome_agent dome_control dome_dashboard tests
+python -m compileall -q dome_agent dome_control dome_web tests
 python tests/acceptance_dome_cli.py
 ```
 
@@ -453,7 +450,6 @@ python tests/acceptance_dome_cli.py
 | `dome_control/domain.py` | catalog/filter/alias/validation/diff |
 | `dome_control/cli.py` | `dome-panel` CLI |
 | `dome_control/panel.py` | форматирование, `.env`, key-файл, demo |
-| `dome_dashboard/app.py` | `create_app`, API endpoints |
-| `dome_dashboard/__main__.py` | `dome-dashboard` CLI |
+| `dome_web/journal_api.py` | `create_app`, API endpoints |
 | `dome_policy.json` | allowlist/denylist |
 | `.env.example` | шаблон конфигурации |

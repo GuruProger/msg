@@ -14,13 +14,13 @@ from urllib.parse import urlsplit
 
 def create_frontend(backend_root: Path | None = None):
     backend_root=Path(backend_root or Path(__file__).resolve().parent.parent).resolve()
-    if not (backend_root/'dome_dashboard/app.py').is_file():
-        raise RuntimeError('Укажите папку нового бэкенда с dome_dashboard/app.py')
+    if not (backend_root/'dome_web/journal_api.py').is_file():
+        raise RuntimeError('Укажите папку нового бэкенда с dome_web/journal_api.py')
     from fastapi import Request
     from fastapi.responses import FileResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
     from starlette.routing import Route
-    from dome_dashboard.app import create_app
+    from .journal_api import create_app
     from .service import DashboardService, WebError
     root=Path(__file__).parent/'static'
     log_dir=Path(os.getenv('AGENT_LOG_DIR') or backend_root/'logs')

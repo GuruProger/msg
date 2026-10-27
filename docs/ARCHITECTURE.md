@@ -36,7 +36,7 @@ LLM не является источником истины для безопа�
 │  DomeAgentAPI ──► DomeClient ──► WebSocket Dome API                │
 └─────────────────────────────────────────────────────────────────────┘
 
-dome_dashboard (отдельный процесс)
+dome_web (отдельный процесс)
     FastAPI ──► JSONL-лог + agent_state.json
     только чтение, никаких команд в Dome
 ```
@@ -59,7 +59,7 @@ dome_dashboard (отдельный процесс)
 | Транспорт | `dome_control/client.py` | WebSocket, auth, request correlation, reconnect, rate limit |
 | Домен | `dome_control/domain.py` | Alias-ы действий, поиск узлов, telemetry diff |
 | Админ-CLI | `dome_control/cli.py`, `dome_control/panel.py` | Ручная диагностика и управление, не агент |
-| Дашборд | `dome_dashboard/app.py` | Read-only HTTP API |
+| Веб-панель | `dome_web/` | Read-only HTTP API журнала + локальный фронтенд |
 
 ## 3. Точки входа и зависимости
 
@@ -67,7 +67,7 @@ dome_dashboard (отдельный процесс)
 
 - `dome-agent` → `dome_agent.agent:main`
 - `dome-panel` → `dome_control.cli:main`
-- `dome-dashboard` → `dome_dashboard.__main__:main`
+- `dome-web` → `dome_web.dashboard_backend:main`
 
 Эквиваленты без установки пакета:
 
@@ -75,13 +75,14 @@ dome_dashboard (отдельный процесс)
 python main.py
 python -m dome_agent
 python -m dome_control
-python -m dome_dashboard
+python -m dome_web
 ```
 
 Зависимости: `fastapi`, `httpx`, `uvicorn`, `websockets`; Python `>=3.14`.
 `dome_agent` импортирует `dome_control`, лениво — `dome_rag` (только чтение
-свидетельств через `KnowledgeService`), но не `dome_dashboard`.
-`dome_dashboard` импортирует только FastAPI/Starlette и читает файлы.
+свидетельств через `KnowledgeService`), но не `dome_web`.
+`dome_web` обслуживает локальную панель, импортирует агентские модули и
+читает JSONL/state.
 
 ## 4. Жизненный цикл агента
 
@@ -630,9 +631,9 @@ last_actions, failed_until, pending_actions, co2_override, notes
 `verification`, `message`, `llm_call`, `knowledge`, `error`. Подробные поля — в
 [REFERENCE.md](REFERENCE.md).
 
-## 13. Read-only дашборд
+## 13. Read-only API журнала
 
-`dome_dashboard` — отдельный процесс, не влияет на агента:
+`dome_web` — отдельный процесс, не влияет на агента:
 
 - `create_app()` читает `AGENT_LOG_DIR`/`AGENT_STATE_FILE` при каждом запросе;
 - берёт самый новый `agent_*.jsonl` по mtime, читает хвост до 4 MB;
@@ -662,7 +663,7 @@ Health-статусы: `ok`, `waiting`, `stopped`, `stale` (последняя �
 5. Команда не считается успешной только по `success` API; нужен физический
    эффект или явное `unknown`.
 6. Все действия и решения попадают в JSONL с `run_id`/`seq`.
-7. Секреты не попадают в логи, state и HTTP-ответы дашборда.
+7. Секреты не попадают в логи, state и HTTP-ответы панели.
 8. State переживает рестарт; незавершённые команды не повторяются слепо.
 9. Один процесс-агент владеет одним state-файлом; параллельный запуск двух
    агентов на одном state не поддерживается.
@@ -674,8 +675,8 @@ Health-статусы: `ok`, `waiting`, `stopped`, `stale` (последняя �
   LLM и в события `knowledge`, но не является разрешением на команду. Вердикт
   базы нельзя повышать; `NO_RELEVANT_EVIDENCE` означает отказ. Несобранная
   база не блокирует запуск агента.
-- Дашборд не имеет аутентификации; по умолчанию слушает `127.0.0.1:8080`,
-  его нельзя выставлять в сеть без отдельного прокси/аутентификации.
+- Веб-панель не имеет аутентификации; по умолчанию слушает `127.0.0.1:8080`,
+  её нельзя выставлять в сеть без отдельного прокси/аутентификации.
 - Агент не является системой реального времени: цикл 1 s, телеметрия может
   быть stale, проверка эффекта — best effort с таймаутом.
 - В `normal` без DeepSeek работают только auto-protective действия правил;

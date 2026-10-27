@@ -8,8 +8,8 @@
 
 1. Источник истины — текущий код, а не эта документация.
 2. Документация описывает backend: `dome_agent`, `dome_control`,
-   `dome_dashboard/app.py` и read-only мост `dome_agent/knowledge.py`.
-   Фронтенд `dome_dashboard/static` и внутреннее устройство `dome_rag` —
+   `dome_web/journal_api.py` и read-only мост `dome_agent/knowledge.py`.
+   Фронтенд `dome_web/static` и внутреннее устройство `dome_rag` —
    вне scope, если пользователь явно не попросит обратное.
 3. Не документировать поведение, которого нет в коде. Если код и README
    расходятся — фиксировать фактическое поведение и отдельно отметить
@@ -34,7 +34,7 @@
 | `dome_agent/logging.py` | `REFERENCE.md` (JSONL), `ARCHITECTURE.md` (аудит) |
 | `dome_agent/llm.py` | `ARCHITECTURE.md` (LLM), `REFERENCE.md` (env LLM) |
 | `dome_control/client.py`, `agent_api.py`, `domain.py` | `ARCHITECTURE.md` (транспорт), `REFERENCE.md` (API/ошибки) |
-| `dome_dashboard/app.py` | `REFERENCE.md` (HTTP API), `OPERATIONS.md` (дашборд) |
+| `dome_web/journal_api.py` | `REFERENCE.md` (HTTP API), `OPERATIONS.md` (дашборд) |
 | `dome_control/cli.py`, `panel.py` | `OPERATIONS.md` (админ-CLI), `REFERENCE.md` |
 | `dome_policy.json` | `REFERENCE.md` (таблица policy), `OPERATIONS.md` |
 | `tests/` | `REFERENCE.md` (тесты), при изменении инвариантов — `ARCHITECTURE.md` |
@@ -61,7 +61,7 @@
    ```bash
    python main.py --help
    python -m dome_control --help
-   python -m dome_dashboard --help
+   python -m dome_web --help
    ```
    Все флаги/команды в docs должны существовать.
 6. **Проверить ссылки и имена**:
@@ -69,11 +69,11 @@
    grep -R "AGENT_" docs README.md | sort -u
    grep -R "/api/" docs | sort -u
    ```
-   Сверить с `dome_agent/config.py`, `dome_dashboard/app.py`.
+   Сверить с `dome_agent/config.py`, `dome_web/journal_api.py`.
 7. **Прогнать тесты и компиляцию**:
    ```bash
    python -m unittest discover -s tests
-   python -m compileall -q dome_agent dome_control dome_dashboard tests
+   python -m compileall -q dome_agent dome_control dome_web tests
    ```
    Если тесты изменились количественно — обновить цифру в `REFERENCE.md`.
 8. **Проверить отсутствие секретов**:

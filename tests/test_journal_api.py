@@ -1,4 +1,4 @@
-"""Tests for the read-only dashboard API."""
+"""Tests for the read-only journal API."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from dome_dashboard import create_app
+from dome_web.journal_api import create_app
 
 RUN_ID = "20261027-120000"
 DOME_SECRET = "dome-secret-value"

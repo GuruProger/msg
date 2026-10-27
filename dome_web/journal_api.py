@@ -1,8 +1,8 @@
-"""Read-only FastAPI API for the Dome observability dashboard.
+"""Read-only FastAPI journal API for the local web panel.
 
-The dashboard is deliberately a viewer: it only reads the agent JSONL log and
-the persistent state file.  It never sends Dome commands, mutates state, or
-writes logs.
+The API is deliberately a viewer: it only reads the agent JSONL log and the
+persistent state file.  It never sends Dome commands, mutates state, or writes
+logs.
 """
 
 from __future__ import annotations

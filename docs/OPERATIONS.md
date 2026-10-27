@@ -25,7 +25,7 @@ pip install -r requirements.txt
 pip install .
 ```
 
-После этого доступны `dome-agent`, `dome-panel`, `dome-dashboard`.
+После этого доступны `dome-agent`, `dome-panel`, `dome-web`.
 
 ## 3. Первичная настройка
 
@@ -261,18 +261,18 @@ ps -ef | grep '[d]ome_agent'
 tail -n 1 logs/agent_*.jsonl
 ```
 
-## 10. Дашборд (только backend)
+## 10. Веб-панель и read-only API
 
 ```bash
-python -m dome_dashboard
+python -m dome_web --port 8080
 # или
-dome-dashboard --host 127.0.0.1 --port 8080
+dome-web --port 8080
 ```
 
-Переменные:
+Параметры:
 
-- `DASHBOARD_HOST` (по умолчанию `127.0.0.1`);
-- `DASHBOARD_PORT` (по умолчанию `8080`);
+- `--port` (по умолчанию `8080`);
+- `--backend-root` — корень проекта с `dome_web/journal_api.py`;
 - `AGENT_LOG_DIR`, `AGENT_STATE_FILE` — что читать.
 
 Проверка:
@@ -336,7 +336,7 @@ CLI также валидирует действия по живому ката�
 | Предложение не выполняется | ждёт «да»/force или истекло 5 минут | чат, `PendingProposal` в контексте |
 | Дашборд `waiting` | нет лога/записи | `AGENT_LOG_DIR`, запущен ли агент |
 | Дашборд `stale` | последняя запись старше 120 s | процесс агента, сеть |
-| Порт занят | другой процесс | `ss -ltnp`, `DASHBOARD_PORT` |
+| Порт занят | другой процесс | `ss -ltnp`, `--port` |
 | State повреждён | crash/ручное редактирование | `.corrupt-*`, backup, перезапуск |
 
 Для воспроизведения без реального купола:
@@ -364,7 +364,7 @@ python -m unittest discover -s tests
 
 ```bash
 python -m unittest discover -s tests
-python -m compileall -q dome_agent dome_control dome_dashboard tests
+python -m compileall -q dome_agent dome_control dome_web tests
 ```
 
 Опционально:
