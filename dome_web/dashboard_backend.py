@@ -3,12 +3,70 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import importlib
+import ipaddress
 import json
 from pathlib import Path
 import secrets
+import socket
 import sys
 from types import SimpleNamespace
 from urllib.parse import urlsplit
+
+
+def _local_panel_names() -> frozenset[str]:
+    """Names this machine may legitimately use to reach its own panel."""
+    names = {"localhost", "127.0.0.1", "::1"}
+    for value in (socket.gethostname(), socket.getfqdn()):
+        name = (value or "").strip().rstrip(".").lower()
+        if not name:
+            continue
+        names.add(name)
+        names.add(name.split(".")[0])
+        if not name.endswith(".local"):
+            names.add(name + ".local")
+    return frozenset(names)
+
+
+_LOCAL_PANEL_NAMES = _local_panel_names()
+
+
+def _panel_host_allowed(value: str) -> bool:
+    """Allow loopback, LAN addresses and this machine's own names only.
+
+    The panel is served to the local network, so private/link-local literals
+    are accepted, but arbitrary DNS names are not: that keeps a hostile site
+    from pointing its own domain at the panel (DNS rebinding).
+    """
+    try:
+        parsed = urlsplit("//" + value)
+        host = (parsed.hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host in _LOCAL_PANEL_NAMES or host.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if address.is_loopback or address.is_link_local:
+        return True
+    return not (
+        address.is_global
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    )
+
+
+def _same_origin(origin: str, host: str) -> bool:
+    """An Origin, when sent, must name exactly the panel's own host."""
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() == host.lower()
 
 
 def create_frontend(backend_root: Path | None = None):
@@ -24,6 +82,7 @@ def create_frontend(backend_root: Path | None = None):
     root=Path(__file__).parent/'static'
     service=DashboardService(backend_root,env_file='.env')
     service.csrf=secrets.token_urlsafe(32)
+    service.start(monitor=False)
     service.connection='journal'
     log_dir=service.log_dir
     state_file=service.state_file
@@ -66,10 +125,19 @@ def create_frontend(backend_root: Path | None = None):
     async def frontend_info():
         return service.redact({'csrf':service.csrf,'model':service.settings['model'],'base_url':service.settings['base_url'],'llm_enabled':service.settings['llm_enabled'],'api_key_saved':bool(service.settings['api_key']),'messages':list(service.conversation.messages),'busy':service.conversation.busy,'knowledge':service.knowledge.status(),'runtime':service.runtime_snapshot(),'backend_root':str(backend_root),'log_dir':str(log_dir),'state_file':str(state_file)})
 
+    @app.middleware('http')
+    async def panel_host_guard(request:Request,call_next):
+        # Read-only routes expose logs too, so the Host check covers every
+        # request rather than only mutations.
+        if not _panel_host_allowed(request.headers.get('host','')):
+            return JSONResponse({'ok':False,'error':'Недопустимый адрес панели'},status_code=403)
+        return await call_next(request)
+
     async def authorized(request):
         host=request.headers.get('host','')
-        if host.split(':')[0] not in {'localhost','127.0.0.1'}:raise WebError('Недопустимый адрес панели',403)
-        if request.headers.get('origin') not in {None,'http://'+host}:raise WebError('Запрос с другого сайта запрещён',403)
+        if not _panel_host_allowed(host):raise WebError('Недопустимый адрес панели',403)
+        origin=request.headers.get('origin')
+        if origin is not None and not _same_origin(origin,host):raise WebError('Запрос с другого сайта запрещён',403)
         if not secrets.compare_digest(request.headers.get('x-dome-csrf',''),service.csrf):raise WebError('Обновите страницу перед отправкой',403)
         body=await request.body()
         if len(body)>16000:raise WebError('Слишком большой запрос',413)
@@ -117,7 +185,13 @@ def create_frontend(backend_root: Path | None = None):
 def main():
     parser=argparse.ArgumentParser(description='Моя панель Купола · новый бэкенд')
     parser.add_argument('--backend-root',type=Path,default=Path(__file__).resolve().parent.parent)
+    parser.add_argument('--host',default='0.0.0.0',help='Адрес прослушивания; 127.0.0.1 ограничивает доступ этой машиной')
     parser.add_argument('--port',type=int,default=8080)
     args=parser.parse_args()
     import uvicorn
-    uvicorn.run(create_frontend(args.backend_root),host='127.0.0.1',port=args.port)
+    if args.host in {'0.0.0.0','::'}:
+        print(f'Панель доступна в локальной сети: http://<IP-этой-машины>:{args.port}',flush=True)
+        print('Внимание: у панели нет пароля; любой в этой сети может открыть её и отправлять запросы.',flush=True)
+    else:
+        print(f'Панель доступна по адресу: http://{args.host}:{args.port}',flush=True)
+    uvicorn.run(create_frontend(args.backend_root),host=args.host,port=args.port)

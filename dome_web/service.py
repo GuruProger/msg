@@ -46,6 +46,14 @@ def iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
+def _line_number(row) -> int | None:
+    try:
+        number = int(row.get("line"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return number if 1 <= number <= 8 else None
+
+
 class DashboardService:
     def __init__(self, root: Path, *, demo: bool = False, env_file: str = ".env"):
         self.root = Path(root).resolve()
@@ -68,6 +76,9 @@ class DashboardService:
         self.history: deque[dict] = deque(maxlen=600)
         self.telemetry: dict = {"nodes": {}, "game_time": {}}
         self._mutation_lock = None
+        self._control_fingerprint: tuple[str, str] | None = None
+        self._live_lines: list[dict] | None = None
+        self._live_lines_at = 0.0
         self._readings_at: dict[str, tuple[Any, float]] = {}
         self._catalog_at = 0.0
         self._chat_at = 0.0
@@ -90,6 +101,7 @@ class DashboardService:
                     k, v = line.split("=", 1)
                     values[k.strip()] = v.strip().strip("\"'")
         values.update(os.environ)
+        self._configured_dome_url = str(values.get("DOME_URL") or "").strip()
         truth = lambda k, default=False: str(values.get(k, str(default))).lower() in {"1", "true", "yes", "on"}
         kb_dir = Path(values.get("AGENT_KB_DIR") or self.root / "dome_rag").expanduser()
         if not kb_dir.is_absolute(): kb_dir = self.root / kb_dir
@@ -127,14 +139,34 @@ class DashboardService:
             self.messages.append({"id": 1, "time": time.time(), "sender": {"role": "operator", "name": "Оператор"}, "text": "Панель готова. Здесь можно проверить интерфейс без подключения к оборудованию.", "to": None})
             self.event("connection", event="demo", details="Открыт демонстрационный стенд. Все изменения локальные.")
 
-    def start(self):
+    def start(self, *, monitor: bool = True):
         def run():
             asyncio.set_event_loop(self.loop)
             self._mutation_lock = asyncio.Lock()
-            self.monitor = self.loop.create_task(self._monitor())
+            if monitor:
+                self.monitor = self.loop.create_task(self._monitor())
             self.loop.run_forever()
         self.thread = threading.Thread(target=run, daemon=True, name="dome-web-loop")
         self.thread.start()
+
+    def effective_dome_url(self) -> str:
+        """The address the panel should use for explicit control.
+
+        A running agent publishes the address it actually applied; a panel
+        request may be newer than that heartbeat.  ``journal://`` pseudo-URLs
+        are never treated as a Dome endpoint.
+        """
+        snapshot = self.runtime_snapshot()
+        candidates = (
+            (snapshot.get("requested") or {}).get("dome_url"),
+            (snapshot.get("status") or {}).get("dome_url"),
+            self._configured_dome_url,
+            self.settings.get("url"),
+        )
+        for value in candidates:
+            if isinstance(value, str) and urlsplit(value.strip()).scheme in {"ws", "wss"}:
+                return value.strip()
+        return ""
 
     def call(self, coro, timeout: float = 45):
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
@@ -170,6 +202,9 @@ class DashboardService:
         await self._stop_agent()
         if self.api:
             await self.api.close()
+        self.api = None
+        self._control_fingerprint = None
+        self._live_lines = None
         if self.audit and not self.audit.closed:
             self.audit.write("stop", reason="web_shutdown")
             self.audit.close()
@@ -212,7 +247,7 @@ class DashboardService:
             loader = importlib.import_module("dome_control.panel").read_team_key
             key = loader(s["key_file"]) or ""
         config = self.config_class(
-            dome_url=s["url"], dome_key=key, agent_name=s["name"],
+            dome_url=self.effective_dome_url(), dome_key=key, agent_name=s["name"],
             deepseek_api_key=s["api_key"] or None, deepseek_base_url=s["base_url"],
             deepseek_model=s["model"], mode=s["mode"], dry_run=s["dry_run"],
             control_enabled=s["control_enabled"], llm_enabled=s["llm_enabled"],
@@ -223,12 +258,17 @@ class DashboardService:
         self.gate_class(config.policy_file, control_enabled=config.control_enabled, yolo=config.yolo)
         return config
 
+    def _ensure_audit(self, config):
+        if not self.audit or self.audit.closed:
+            self.audit = self.log_class(self.log_dir, run_id="web_" + datetime.now().strftime("%Y%m%d-%H%M%S"), secrets=config.secrets())
+            self.audit.write("start", agent="dome-web", version="1.0.0", models=[], config=config.safe_dict())
+        return self.audit
+
     async def _open(self):
         self.config = self._make_config()
         self.api = self.api_class(self.config.dome_url, self.config.dome_key, name=self.config.agent_name, timeout=8, min_send_gap=0.35)
-        if not self.audit or self.audit.closed:
-            self.audit = self.log_class(self.log_dir, run_id="web_" + datetime.now().strftime("%Y%m%d-%H%M%S"), secrets=self.config.secrets())
-            self.audit.write("start", agent="dome-web", version="1.0.0", models=[], config=self.config.safe_dict())
+        self._ensure_audit(self.config)
+        self._control_fingerprint = (self.config.dome_url, self.config.agent_name)
         self.connection = "connecting"
         await self.api.connect()
         self.catalog = await self.api.catalog(refresh=True)
@@ -236,6 +276,137 @@ class DashboardService:
         self.connection = "connected"
         self.last_error = None
         self.event("connection", event="connected", details="Подключение к Куполу установлено")
+
+    # ------------------------------------------------------------------
+    # explicit panel control (separate from the journal display)
+    # ------------------------------------------------------------------
+
+    async def _control_api(self):
+        """Return a live API connection used only for explicit panel control."""
+        url = self.effective_dome_url()
+        if not url:
+            raise WebError("Не задан адрес Купола для управления", 409)
+        fingerprint = (url, str(self.settings.get("name") or ""))
+        if self.api is not None:
+            client = getattr(self.api, "client", None)
+            if client is None or getattr(client, "_closed", True):
+                self.api = None
+            elif self._control_fingerprint == fingerprint:
+                return self.api
+            elif self.agent_task and not self.agent_task.done():
+                raise WebError("Агент панели уже использует подключение; остановите его перед командой из чата.", 409)
+            else:
+                await self.api.close()
+                self.api = None
+        config = self._make_config()
+        if not config.dome_key:
+            raise WebError("Не задан ключ доступа к Куполу", 409)
+        self.config = config
+        self._ensure_audit(config)
+        api = self.api_class(config.dome_url, config.dome_key, name=config.agent_name, timeout=5, min_send_gap=0.35)
+        try:
+            await api.connect()
+        except Exception as exc:
+            await api.close()
+            raise WebError(f"Нет подключения к Куполу: {exc}", 409) from exc
+        self.api = api
+        self._control_fingerprint = fingerprint
+        self._live_lines = None
+        self.event("connection", event="control_connected", details="Панель открыла отдельное подключение для команд из чата")
+        return api
+
+    @staticmethod
+    def _panel_lines_from(telemetry) -> list[dict]:
+        node = (telemetry.get("nodes") or {}).get("smart_panel_01") or {}
+        lines = node.get("lines") if isinstance(node, dict) else None
+        return copy.deepcopy(lines) if isinstance(lines, list) else []
+
+    async def _live_panel_lines(self, *, refresh: bool = False) -> list[dict]:
+        if self.demo:
+            lines = self._panel_lines_from(self.telemetry)
+            if not lines:
+                raise WebError("Щиток не вернул список линий", 409)
+            return lines
+        now = time.monotonic()
+        if not refresh and self._live_lines is not None and now - self._live_lines_at <= 5:
+            return copy.deepcopy(self._live_lines)
+        api = await self._control_api()
+        try:
+            data = await api.get_telemetry("smart_panel_01", max_age=5)
+        except Exception as exc:
+            raise WebError(f"Не удалось прочитать линии щитка: {exc}", 409) from exc
+        node = data.get("telemetry") or {}
+        lines = node.get("lines") if isinstance(node, dict) else None
+        if not isinstance(lines, list) or not lines:
+            raise WebError("Щиток не вернул список линий", 409)
+        self._live_lines = copy.deepcopy(lines)
+        self._live_lines_at = now
+        return copy.deepcopy(lines)
+
+    async def panel_lines(self) -> list[dict]:
+        """Live panel lines for the chat; safe to call from the web loop."""
+        if self.demo:
+            return self._panel_lines_from(self.telemetry)
+        if self.loop.is_running() and asyncio.get_running_loop() is not self.loop:
+            return await asyncio.to_thread(self.call, self._live_panel_lines(), 30)
+        return await self._live_panel_lines()
+
+    async def execute_line_command(self, command) -> dict:
+        """Execute a confirmed line command through the normal policy path."""
+        if self.loop.is_running() and asyncio.get_running_loop() is not self.loop:
+            return await asyncio.to_thread(self.call, self._execute_line_command(command), 60)
+        return await self._execute_line_command(command)
+
+    async def _execute_line_command(self, command) -> dict:
+        if self.agent_task and not self.agent_task.done():
+            raise WebError("Агент управляет комплексом. Остановите программу агента перед ручной командой.", 409)
+        if not self.settings["control_enabled"] and self.settings["mode"] != "yolo":
+            raise WebError("Управление выключено в настройках", 403)
+        action = str(getattr(command, "action", ""))
+        try:
+            line = int(getattr(command, "line"))
+        except (TypeError, ValueError):
+            raise WebError("Не указан номер линии", 400)
+        if action not in {"line_on", "line_off"} or not 1 <= line <= 8:
+            raise WebError("Недопустимая команда линии", 403)
+        lock = self._mutation_lock
+        if lock is None:
+            return await self._execute_line_command_locked(command, action, line)
+        async with lock:
+            return await self._execute_line_command_locked(command, action, line)
+
+    async def _execute_line_command_locked(self, command, action: str, line: int) -> dict:
+        lines = await self._live_panel_lines(refresh=True)
+        row = next((x for x in lines if _line_number(x) == line), None)
+        if row is None:
+            raise WebError(f"Линия {line} исчезла из live-каталога щитка", 409)
+        label = str(row.get("name") or getattr(command, "label", "") or f"линия {line}")
+        desired = "ON" if action == "line_on" else "OFF"
+        state = str(row.get("state") or "").upper()
+        if state == desired:
+            return {"ok": True, "noop": True, "verified": True, "line": line, "label": label, "action": action, "state": state}
+        protection = str(row.get("protection_state") or "").upper()
+        if action == "line_on" and protection in {"TRIPPED", "RCD_TRIPPED"}:
+            raise WebError(f"Линия {line}: защита {protection}. Включение отклоняется оборудованием.", 409)
+        result = await self._control({"node_id": "smart_panel_01", "action": action, "value": line, "source": "panel_chat"})
+        inner = result.get("result") if isinstance(result, dict) else None
+        after = None
+        if isinstance(inner, dict):
+            payload = inner.get("result")
+            if isinstance(payload, dict):
+                after = payload.get("after")
+        observed = after.get("state") if isinstance(after, dict) else None
+        return {
+            "ok": bool(result.get("ok")),
+            "verified": bool(result.get("verified")),
+            "noop": False,
+            "line": line,
+            "label": label,
+            "action": action,
+            "state": observed,
+            "error": (inner or {}).get("error") if isinstance(inner, dict) else None,
+            "result": result,
+        }
 
     async def _monitor(self):
         while True:
@@ -652,7 +823,14 @@ class DashboardService:
         if self._demo_agent or self.agent_task and not self.agent_task.done():
             raise WebError("Агент управляет комплексом. Остановите программу агента перед ручной командой.", 409)
         node_id, action = str(data.get("node_id", "")), str(data.get("action", ""))
-        node = next((n for n in self.catalog if n["node_id"] == node_id), None)
+        node = next((n for n in self.catalog if n.get("node_id") == node_id), None)
+        if (not node or action not in node.get("controls", [])) and not self.demo and self.api:
+            try:
+                self.catalog = await self.api.catalog(refresh=True)
+                self._catalog_at = time.monotonic()
+            except Exception:
+                pass
+            node = next((n for n in self.catalog if n.get("node_id") == node_id), None)
         if not node or action not in node.get("controls", []):
             raise WebError("Команда недоступна в актуальном каталоге", 403)
         allowed, reason = self._permission(node_id, action, data.get("value"))
@@ -668,18 +846,23 @@ class DashboardService:
             self.event("action", request=data, response={"success": True}, source="demo")
             self.event("verification", ok=True, expected=action, observed=result, source="demo")
             return {"ok": True, "accepted": True, "verified": True, "result": result}
-        self._require_connected()
-        if self.api.client.role != "team":
+        client = getattr(self.api, "client", None)
+        if client is None or getattr(client, "_closed", True):
+            raise WebError("Нет подключения к Куполу", 409)
+        if client.role != "team":
             raise WebError("Управление доступно только активной команде", 403)
         config = self._make_config()
+        self._ensure_audit(config)
         from dome_agent.rules import ActionSpec, NO_VALUE
         from dome_agent.control import DomeTool, ModelCommand
         from dome_agent.verification import expected_effect
-        spec = ActionSpec(key="web:" + secrets.token_hex(5), node_id=node_id, action=action, value=data.get("value", NO_VALUE), reason="Команда из локальной веб-панели")
+        source = "panel_chat" if data.get("source") == "panel_chat" else "rules"
+        reason = "Команда из чата панели после подтверждения оператора" if source == "panel_chat" else "Команда из локальной веб-панели"
+        spec = ActionSpec(key="web:" + secrets.token_hex(5), node_id=node_id, action=action, value=data.get("value", NO_VALUE), reason=reason)
         checked = self.gate_class(config.policy_file, control_enabled=config.control_enabled, yolo=config.yolo).check(spec)
         if not checked.allowed:
             raise WebError(checked.reason, 403)
-        ref = self.audit.write("decision", situation="Ручная команда из панели", cause="Запрос пользователя", confidence=1, evidence=[], plan=[action], source="rules")
+        ref = self.audit.write("decision", situation=reason, cause="Запрос пользователя", confidence=1, evidence=[], plan=[action], source=source)
         result = await DomeTool(self.api).execute(ModelCommand.from_action(spec), verify=True, force=False)
         action_ref = self.audit.write("action", request=spec.request(), response={"success": bool(result.get("ok")), "error": result.get("error")}, ref=ref)
         payload = result.get("result", {})
