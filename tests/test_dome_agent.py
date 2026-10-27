@@ -84,6 +84,7 @@ def make_config(tmp: str, **overrides) -> AgentConfig:
         "deepseek_api_key": None,
         "log_dir": Path(tmp) / "logs",
         "state_file": Path(tmp) / "logs" / "agent_state.json",
+        "runtime_file": Path(tmp) / "logs" / "agent_runtime.json",
         "observation_interval_s": 5.0,
         "min_send_gap_s": 0.2,
         "run_seconds": 0.6,
@@ -226,6 +227,7 @@ class ConfigTests(unittest.TestCase):
                 "DOME_KEY": "",
                 "DOME_KEY_FILE": str(key_file),
                 "DEEPSEEK_API_KEY": "llm-secret",
+                "AGENT_RUNTIME_FILE": str(Path(tmp) / "agent_runtime.json"),
             }
             with mock.patch.dict(os.environ, env, clear=True):
                 config = AgentConfig.from_env(env_file=None)
@@ -2329,14 +2331,16 @@ class GateTests(unittest.TestCase):
         self.assertTrue(config.yolo)
 
     def test_env_flags(self) -> None:
-        env = {
-            "DOME_URL": "wss://example.test",
-            "DOME_KEY": "team-key",
-            "AGENT_ALLOW_CONTROL": "1",
-            "AGENT_YOLO": "0",
-        }
-        with mock.patch.dict(os.environ, env, clear=True):
-            config = AgentConfig.from_env(env_file=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "DOME_URL": "wss://example.test",
+                "DOME_KEY": "team-key",
+                "AGENT_ALLOW_CONTROL": "1",
+                "AGENT_YOLO": "0",
+                "AGENT_RUNTIME_FILE": str(Path(tmp) / "agent_runtime.json"),
+            }
+            with mock.patch.dict(os.environ, env, clear=True):
+                config = AgentConfig.from_env(env_file=None)
         self.assertTrue(config.control_enabled)
         self.assertFalse(config.yolo)
 
