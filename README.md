@@ -1,4 +1,13 @@
-# Dome autonomous shift agent
+# Купол — агент с RAG и панелью
+
+Для панели запустите **start_panel.cmd** и откройте http://127.0.0.1:8080/.
+Новый RAG уже собран и подключён к агенту, чату и разделу «База знаний».
+Инструкция по общей связке: [README_FRONTEND.md](README_FRONTEND.md).
+Панель запускается локально; соединение с Куполом само не открывается.
+
+Ниже — подробности запуска и настройки отдельного агента.
+
+## Autonomous shift agent
 
 One-command autonomous agent for the Dome WebSocket API. The LLM proposes or
 executes actions depending on the selected mode; a fail-closed policy gate and
@@ -21,22 +30,6 @@ The agent is **read-only by default**. To run the normal control mode, set
 `python -m dome_agent` is equivalent. `dome-agent` is installed by
 `pip install .`.
 
-## Read-only dashboard
-
-The dashboard is a local viewer over the agent JSONL log and persistent state.
-It never sends Dome commands, writes chat messages, or mutates agent files.
-
-```bash
-python -m dome_dashboard
-# or, after pip install .:
-dome-dashboard --host 127.0.0.1 --port 8080
-```
-
-It reads `AGENT_LOG_DIR` and `AGENT_STATE_FILE` when set, otherwise `logs/` and
-`logs/agent_state.json`. Override the bind address with `DASHBOARD_HOST` and
-`DASHBOARD_PORT`. Secrets and secret-looking fields are removed before data is
-returned; use `/api/demo` for an offline sample.
-
 ## Configuration
 
 Required:
@@ -52,7 +45,7 @@ Optional:
 - `AGENT_MODE=normal|auto|yolo` — operating mode (default `normal`).
   - `normal` — the LLM analyzes telemetry/chat and proposes actions; nothing
     is executed until the operator confirms in Dome chat. The approved
-    protective exceptions (`line_off`, `turn_off`, `set_fan=ON`,
+    protective exceptions (`line_off`, `pause_job`, `turn_off`, `set_fan=ON`,
     ventilation/fume `turn_on`, `set_mode=FRESH_AIR`) run automatically.
     Blocked proposals require an explicit force confirmation.
   - `auto` — deterministic rules only; legacy/fallback mode for tests or when
@@ -71,8 +64,6 @@ Optional:
 - `AGENT_RUN_SECONDS=N` — stop cleanly after N seconds; `0` runs indefinitely.
 - `AGENT_LOG_DIR`, `AGENT_STATE_FILE` — log and restart-state locations.
 - `AGENT_MIN_SEND_GAP=0.35` — enforces at most five commands/requests per second.
-- `DASHBOARD_HOST`, `DASHBOARD_PORT` — dashboard bind address and port
-  (defaults: `127.0.0.1:8080`).
 
 ## Runtime behavior
 
@@ -93,8 +84,8 @@ Optional:
   `verify=false` and logs `unsafe: true`.
 - The only model tools are `control`, `query`, `telemetry`, `catalog`, and
   `send_message`. There is no shell/subprocess tool.
-- Persists the current task, chat cursor, cooldowns, CO2 source override, and
-  pre-send action intents so a restart reconciles unknown command outcomes.
+- Persists the current task, chat cursor, cooldowns, and CO2 source override so a
+  restart does not duplicate or forget work.
 - Ignores operator chat addressed to another team or agent.
 - Blocks CNC work when fume extraction is off, alarming, or below 50% airflow.
 - Treats CO2 as a false alarm only when an isolated high sensor is contradicted
@@ -106,10 +97,9 @@ Optional:
 
 Each run creates `logs/agent_<run_id>.jsonl` with flushed JSONL records:
 `start`, `connection`, `observation`, `decision`, `action`, `action_blocked`,
-`action_reconcile`, `verification`, `message`, `llm_call`, `error`,
-`action_queue`, and `stop`.
-`decision.source` shows `rules` or `llm`; `action.source` shows `yolo`,
-`confirmed`, `confirmed_force`, or `auto`. Secrets are redacted before writing.
+`verification`, `message`, `llm_call`, `error`, and `stop`. `decision.source`
+shows `rules` or `llm`; `action.source` shows `yolo`, `confirmed`,
+`confirmed_force`, or `auto`. Secrets are redacted before writing.
 A normal SIGINT/SIGTERM shutdown always writes the final `stop` record.
 
 ## Tests
@@ -137,4 +127,10 @@ verification.
 - `dome_agent/state.py` — restart-safe JSON state.
 - `dome_agent/logging.py` — JSONL audit log.
 - `dome_control/` — WebSocket client, validation, CLI, and agent API facade.
-- `dome_dashboard/` — read-only FastAPI API and mission-control frontend.
+
+
+## Browser interface
+
+My light browser panel runs over the new backend: open `start_panel.cmd`, then
+`http://127.0.0.1:8080`. It reads the new project's logs without connecting to Dome
+or starting an agent. See [README_FRONTEND.md](README_FRONTEND.md).
