@@ -1145,9 +1145,9 @@ class DomeAgent:
                 expect=expect.description,
             )
             self.stats["actions"] += 1
-            verified = True
+            verified = success
             verification_error = None
-            if verify and not self.config.dry_run:
+            if verify and success and not self.config.dry_run:
                 verify_started = time.monotonic()
                 verified, observed, verification_error = await self._verify_action(
                     action,

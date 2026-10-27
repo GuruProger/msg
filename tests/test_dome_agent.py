@@ -1243,6 +1243,39 @@ class NoEffectAPI(FakeAPI):
         }
 
 
+class RejectedControlAPI(FakeAPI):
+    """Reject a control command without waiting for a telemetry effect."""
+
+    def __init__(self, telemetry: dict) -> None:
+        super().__init__(telemetry)
+        self.telemetry_reads = 0
+
+    async def get_telemetry(
+        self,
+        node_id: str | None = None,
+        *,
+        max_age: float = 5.0,
+        next_frame: bool = False,
+    ) -> dict:
+        self.telemetry_reads += 1
+        return await super().get_telemetry(
+            node_id,
+            max_age=max_age,
+            next_frame=next_frame,
+        )
+
+    async def control_device(self, node_id: str, action: str, value=MISSING, **kwargs) -> dict:
+        self.actions.append({"node_id": node_id, "action": action, "value": None if value is MISSING else value})
+        return {
+            "success": False,
+            "accepted": False,
+            "error": "control rejected",
+            "after": None,
+            "diff": None,
+            "verify_error": None,
+        }
+
+
 class ExplodingAPI(FakeAPI):
     async def control_device(self, *args, **kwargs) -> dict:
         raise DomeConnectionError("control transport failed")
@@ -1909,6 +1942,23 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
                     for record in records
                 )
             )
+
+    async def test_rejected_action_skips_verification_wait(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            api = RejectedControlAPI(base_telemetry())
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            action = ActionSpec(
+                key="test-rejected-line",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test rejected control",
+            )
+            outcome = await agent._execute_action(action, None)
+            self.assertEqual(outcome, "failed")
+            self.assertEqual(api.telemetry_reads, 0)
 
     async def test_unknown_action_uses_diff_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
