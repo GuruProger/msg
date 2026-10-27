@@ -652,6 +652,16 @@ class RuleTests(unittest.TestCase):
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "fire_not_ready")
 
+    def test_machine_error_is_reported_without_task(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update({"state": "ERROR", "error_code": "E01"})
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertIn("MACHINE_ERROR", result.situation)
+        self.assertTrue(any(
+            message.dedupe_key == "safety_alert:MACHINE_ERROR"
+            for message in result.messages
+        ))
+
     def test_critical_radiation_alert_is_reported_without_task(self) -> None:
         data = base_telemetry()
         data["nodes"]["radiation_sensor_01"]["dose_rate_usv_h"] = 2.0

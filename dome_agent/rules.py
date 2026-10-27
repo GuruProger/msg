@@ -19,6 +19,12 @@ from .state import StateStore
 
 NO_VALUE = object()
 
+_MACHINE_ALERT_CODES = frozenset({
+    "MACHINE_ERROR",
+    "MACHINE_ALARM",
+    "MACHINE_HOLD_ALARM",
+})
+
 _SAFETY_ALERT_CODES = frozenset({
     "CONDENSATE",
     "CO",
@@ -973,7 +979,9 @@ class RuleEngine:
                 if alert.get("severity") != "critical":
                     continue
                 code = _state(alert.get("code"))
-                if code not in _SAFETY_ALERT_CODES:
+                if code not in _SAFETY_ALERT_CODES and not (
+                    task is None and code in _MACHINE_ALERT_CODES
+                ):
                     continue
                 detail = str(alert.get("message") or code)
                 return RuleResult(
