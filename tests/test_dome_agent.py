@@ -501,6 +501,16 @@ class RuleTests(unittest.TestCase):
         self.assertNotIn("снято", text)
         self.assertIn("проверки Оператора", text)
 
+    def test_fire_alarm_has_absolute_priority(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["fire_suppression_01"].update({"alarm": True, "state": "DISCHARGED"})
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertEqual(result.situation, "Пожарная автоматика сработала")
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+        self.assertTrue(result.messages)
+        self.assertIn("заблокированы", result.messages[0].text)
+        self.assertNotIn("остановлено", result.messages[0].text)
+
     def test_smoke_message_does_not_claim_a_stop_that_did_not_happen(self) -> None:
         data = base_telemetry()
         data["nodes"]["smoke_detector_01"]["smoke_detected"] = True

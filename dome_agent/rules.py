@@ -459,6 +459,24 @@ class RuleEngine:
         evidence: list[dict[str, Any]] = []
 
         # Fire/smoke has absolute priority: no automatic production resume.
+        fire = snapshot.node("fire_suppression_01")
+        if as_bool(fire.get("alarm")) or _state(fire.get("state")) == "DISCHARGED":
+            return RuleResult(
+                situation="Пожарная автоматика сработала",
+                cause="аварийный сигнал или разрядка пожарной автоматики",
+                confidence=0.99,
+                evidence=[
+                    {"node": "fire_suppression_01", "param": "alarm", "value": fire.get("alarm")},
+                    {"node": "fire_suppression_01", "param": "state", "value": fire.get("state")},
+                ],
+                plan=["не запускать и не возобновлять производство", "сообщить Оператору"],
+                messages=[OutgoingMessage(
+                    "Пожарная автоматика сработала. Новые запуски и автоматическое возобновление заблокированы; нужна проверка Оператора.",
+                    "fire",
+                    min_interval_s=60,
+                )],
+            )
+
         if _powder_present(snapshot):
             return RuleResult(
                 situation="Обнаружен дым",
