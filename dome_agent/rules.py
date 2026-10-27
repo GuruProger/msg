@@ -782,6 +782,15 @@ class RuleEngine:
                 return False, "CO2 ещё высокий"
             return True, "CO2 в норме"
         if reason == "IL_CONDENSATE":
+            climate = snapshot.node("climate_sensor_01")
+            if not snapshot.online("climate_sensor_01"):
+                return False, "датчик климата недоступен; автоматический resume запрещён"
+            if (
+                as_float(climate.get("humidity_pct")) is None
+                or as_float(climate.get("temperature_c")) is None
+                or as_float(climate.get("dew_point_c")) is None
+            ):
+                return False, "влажность/точка росы неизвестны; автоматический resume запрещён"
             if _condensate_present(snapshot):
                 return False, "конденсат/влажность ещё выше нормы"
             return True, "влажность и точка росы в норме"
@@ -798,9 +807,13 @@ class RuleEngine:
                 return False, "пожарная автоматика не готова"
             return True, "дым не обнаружен, IL_SMOKE сброшен"
         if reason == "IL_VOC_BOX":
+            if not snapshot.online("air_quality_sensor_01"):
+                return False, "датчик воздуха недоступен; автоматический resume запрещён"
             air = snapshot.node("air_quality_sensor_01")
             voc = as_float(air.get("voc_index"))
-            if voc is not None and voc > 400:
+            if voc is None:
+                return False, "VOC неизвестен; автоматический resume запрещён"
+            if voc > 400:
                 return False, f"VOC {voc:.0f}"
             if not _fume_ready(snapshot):
                 return False, "вытяжка не даёт рабочий поток"

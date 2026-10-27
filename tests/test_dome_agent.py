@@ -483,6 +483,32 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data))
         self.assertTrue(any(action.action == "resume" for action in result.actions))
 
+    def test_missing_climate_values_do_not_resume(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_CONDENSATE"}
+        )
+        data["nodes"]["climate_sensor_01"]["humidity_pct"] = None
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
+    def test_missing_voc_does_not_resume(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_VOC_BOX"}
+        )
+        data["nodes"]["air_quality_sensor_01"]["voc_index"] = None
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertFalse(any(action.action == "resume" for action in result.actions))
+
+    def test_voc_hold_resumes_with_valid_airflow(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["printer_3d_01"].update(
+            {"state": "PAUSED", "paused": True, "hold_level": "WARNING", "hold_reason": "IL_VOC_BOX"}
+        )
+        result = RuleEngine().decide(Snapshot(data))
+        self.assertTrue(any(action.action == "resume" for action in result.actions))
+
     def test_cnc_is_blocked_when_fume_airflow_is_low(self) -> None:
         data = base_telemetry()
         data["nodes"]["cnc_01"].update({"state": "IDLE", "homed": True, "progress_pct": 0.0})
