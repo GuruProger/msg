@@ -650,10 +650,15 @@ class Snapshot:
         air = self.node("air_quality_sensor_01")
         co = as_float(air.get("co_ppm"))
         voc = as_float(air.get("voc_index"))
-        if co is not None and co > 10:
-            add("critical" if co > 25 else "warning", "CO", "air_quality_sensor_01", f"CO {co:.2f} ppm")
-        if voc is not None and voc > 400:
-            add("warning", "VOC", "air_quality_sensor_01", f"VOC index {voc:.0f}")
+        if not self.online("air_quality_sensor_01"):
+            add("warning", "AIR_UNKNOWN", "air_quality_sensor_01", "Air quality telemetry unavailable")
+        elif as_bool(air.get("warming_up")) or co is None or voc is None:
+            add("warning", "AIR_UNKNOWN", "air_quality_sensor_01", "Air quality telemetry incomplete")
+        else:
+            if co > 10:
+                add("critical" if co > 25 else "warning", "CO", "air_quality_sensor_01", f"CO {co:.2f} ppm")
+            if voc > 400:
+                add("warning", "VOC", "air_quality_sensor_01", f"VOC index {voc:.0f}")
 
         radiation = self.node("radiation_sensor_01")
         dose = as_float(radiation.get("dose_rate_usv_h"))

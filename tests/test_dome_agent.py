@@ -566,12 +566,14 @@ class RuleTests(unittest.TestCase):
         data["nodes"]["smoke_detector_02"]["online"] = False
         data["nodes"]["fire_suppression_01"]["online"] = False
         data["nodes"]["climate_sensor_01"]["humidity_pct"] = None
+        data["nodes"]["air_quality_sensor_01"]["online"] = False
         alerts = Snapshot(data).alerts()
         codes = {alert["code"] for alert in alerts}
         self.assertIn("SMOKE_UNKNOWN", codes)
         self.assertIn("SMOKE_OFFLINE", codes)
         self.assertIn("FIRE_UNKNOWN", codes)
         self.assertIn("CLIMATE_UNKNOWN", codes)
+        self.assertIn("AIR_UNKNOWN", codes)
         for alert in alerts:
             if alert["code"] in {"SMOKE_UNKNOWN", "SMOKE_OFFLINE", "FIRE_UNKNOWN"}:
                 self.assertEqual(alert["severity"], "critical")
@@ -647,6 +649,39 @@ class RuleTests(unittest.TestCase):
         result = RuleEngine().decide(Snapshot(data), task)
         self.assertFalse(any(action.action == "start_job" for action in result.actions))
         self.assertEqual(result.task["items"][0]["note"], "power_not_ready")
+
+    def test_start_blocked_when_air_quality_unknown(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["air_quality_sensor_01"]["voc_index"] = None
+        task = {
+            "message_id": 14,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "air_unknown")
+
+    def test_start_blocked_when_co_is_high(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["air_quality_sensor_01"]["co_ppm"] = 15.0
+        task = {
+            "message_id": 15,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "co_high")
+
+    def test_start_blocked_when_voc_is_high(self) -> None:
+        data = base_telemetry()
+        data["nodes"]["air_quality_sensor_01"]["voc_index"] = 500.0
+        task = {
+            "message_id": 16,
+            "items": [{"kind": "print", "file": "bracket_v2.gcode", "status": "pending", "text": "print"}],
+        }
+        result = RuleEngine().decide(Snapshot(data), task)
+        self.assertFalse(any(action.action == "start_job" for action in result.actions))
+        self.assertEqual(result.task["items"][0]["note"], "voc_high")
 
     def test_missing_voc_does_not_resume(self) -> None:
         data = base_telemetry()

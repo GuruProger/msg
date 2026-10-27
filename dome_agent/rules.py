@@ -142,6 +142,21 @@ def _climate_data_known(snapshot: Snapshot) -> bool:
     )
 
 
+def _air_quality_block(snapshot: Snapshot) -> tuple[str, str] | None:
+    if not snapshot.online("air_quality_sensor_01"):
+        return "air_unknown", "Датчик воздуха недоступен: запуск производства запрещён."
+    air = snapshot.node("air_quality_sensor_01")
+    co = as_float(air.get("co_ppm"))
+    voc = as_float(air.get("voc_index"))
+    if as_bool(air.get("warming_up")) or co is None or voc is None:
+        return "air_unknown", "Датчик воздуха не готов или его показания неизвестны: запуск производства запрещён."
+    if co > 10.0:
+        return "co_high", f"CO {co:.2f} ppm: запуск производства запрещён."
+    if voc > 400.0:
+        return "voc_high", f"VOC index {voc:.0f}: запуск производства запрещён."
+    return None
+
+
 def _fume_ready(snapshot: Snapshot) -> bool:
     if not snapshot.online("fume_extraction_01"):
         return False
@@ -1318,6 +1333,9 @@ class RuleEngine:
             return "climate_unknown", "Данные климата недоступны или неполны: запуск производства запрещён."
         if not _power_ready(snapshot):
             return "power_not_ready", "Напряжение шины неизвестно или ниже нормы: запуск производства запрещён."
+        air_block = _air_quality_block(snapshot)
+        if air_block is not None:
+            return air_block
         if _condensate_present(snapshot):
             return "condensate", "Риск конденсата: запуск станков запрещён."
         if node_id == "cnc_01":
