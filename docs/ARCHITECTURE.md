@@ -1,4 +1,4 @@
-# Архитектура backend
+# Архитектура проекта
 
 ## 1. Назначение
 
@@ -20,69 +20,55 @@ LLM не является источником истины для безопа�
 ## 2. Компоненты
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                        python main.py / dome_agent                  │
-│                                                                     │
-│  AgentConfig ──► DomeAgent ──► RuleEngine ──► ActionSpec            │
-│                      │              │                               │
-│                      │              ├── Snapshot / analyze_co2      │
-│                      │              └── StateStore (cooldowns)       │
-│                      │                                              │
-│                      ├── CommandGate (dome_policy.json)             │
-│                      ├── DomeTool (LLM tools)                       │
-│                      ├── DeepSeekAdvisor                          │
-│                      └── AgentLog (JSONL)                          │
-│                                                                     │
-│  DomeAgentAPI ──► DomeClient ──► WebSocket Dome API                │
-└─────────────────────────────────────────────────────────────────────┘
+main.py -> DomeAgent
+  |-- Snapshot / analyze_co2 -> RuleEngine -> ActionSpec
+  |-- KnowledgeService -> dome_rag (карточки, покрытие, цитаты; только чтение)
+  |-- DeepSeekAdvisor -> разрешенная модель -> ModelDecision
+  |-- CommandGate + DomeTool -> DomeAgentAPI -> DomeClient -> Dome WebSocket API
+  |-- ExpectedEffect -> проверка фактического результата
+  `-- StateStore + AgentLog -> JSONL и состояние
 
-dome_web (отдельный процесс)
-    FastAPI ──► JSONL-лог + agent_state.json
-    только чтение, никаких команд в Dome
+launch_frontend.py -> dome_web.dashboard_backend
+  |-- dome_dashboard.app -> чтение JSONL и state
+  |-- dome_web/static -> светлый интерфейс
+  `-- Conversation -> KnowledgeService -> справочный ответ / пояснение модели
 ```
 
 | Слой | Модуль | Ответственность |
 |---|---|---|
-| Точка входа | `main.py`, `dome_agent/__main__.py` | Запуск `dome_agent.agent.main` |
-| Конфигурация | `dome_agent/config.py` | `.env`, env, валидация, redaction |
-| Главный цикл | `dome_agent/agent.py` | Подключение, цикл смены, чат, очередь действий, подтверждения, shutdown |
-| Правила | `dome_agent/rules.py` | Safety/production-решения, `ActionSpec`, сообщения |
-| Анализ | `dome_agent/analysis.py` | Нормализация телеметрии, CO2 consensus, alerts, `Snapshot` |
-| Чат | `dome_agent/chat.py` | Разбор заданий, фильтрация сообщений, completion guards |
-| LLM | `dome_agent/llm.py` | DeepSeek `advise`/`decide`, бюджет вызовов, JSON-парсинг |
-| Модельные команды | `dome_agent/control.py` | `ModelCommand`, `ModelDecision`, `PendingProposal`, `DomeTool`, hard denylist |
-| Policy gate | `dome_agent/gate.py` | Fail-closed allowlist/denylist |
-| Проверка эффекта | `dome_agent/verification.py` | `ExpectedEffect`, проверка телеметрии после команды |
-| Состояние | `dome_agent/state.py` | Атомарный JSON-state, cooldowns, intent, chat cursor |
-| Аудит | `dome_agent/logging.py` | JSONL, `seq`, flush, redaction |
-| Dome API | `dome_control/agent_api.py` | Валидация каталога, before/after, tool schemas |
-| Транспорт | `dome_control/client.py` | WebSocket, auth, request correlation, reconnect, rate limit |
-| Домен | `dome_control/domain.py` | Alias-ы действий, поиск узлов, telemetry diff |
-| Админ-CLI | `dome_control/cli.py`, `dome_control/panel.py` | Ручная диагностика и управление, не агент |
-| Веб-панель | `dome_web/` | Read-only HTTP API журнала + локальный фронтенд |
+| Цикл агента | `dome_agent/agent.py` | Телеметрия, задания, RAG-контекст, предложения, очередь, восстановление |
+| Анализ и правила | `analysis.py`, `rules.py`, `chat.py` | Сопоставление признаков, ограничения производства, задания Оператора |
+| RAG-мост | `dome_agent/knowledge.py` | Общий сервис чтения базы, полный ответ и компактный пакет для LLM |
+| База знаний | `dome_rag/builder/` | Извлечение, карточки, гибридный поиск, покрытие, цитирование, оценка |
+| Модель | `dome_agent/llm.py`, `control.py` | Ограниченные инструменты, строгий JSON, бюджет, hard denylist |
+| Исполнение | `gate.py`, `verification.py`, `dome_control/agent_api.py` | Полномочия, каталог, отправка и проверка эффекта |
+| Транспорт | `dome_control/client.py`, `domain.py` | WebSocket, корреляция запросов, каталог, freshness, rate limit |
+| Аудит | `logging.py`, `state.py` | JSONL с redaction, seq/ref, намерения команд, cooldown и рестарт |
+| API просмотра | `dome_dashboard/app.py` | Сводка из журнала, state, история, синтетический пример |
+| Интерфейс | `dome_web/dashboard_backend.py`, `static/`, `conversation.py` | Мои страницы, поиск и чат; никаких control-маршрутов в этой оболочке |
 
 ## 3. Точки входа и зависимости
 
-Установленные console scripts (`pyproject.toml`):
+Из корня проекта:
 
-- `dome-agent` → `dome_agent.agent:main`
-- `dome-panel` → `dome_control.cli:main`
-- `dome-web` → `dome_web.dashboard_backend:main`
-
-Эквиваленты без установки пакета:
-
-```bash
+```powershell
 python main.py
 python -m dome_agent
-python -m dome_control
-python -m dome_web
+python launch_frontend.py --port 8080
+python -m dome_web --port 8080
+python -m dome_rag.kb stats
 ```
 
-Зависимости: `fastapi`, `httpx`, `uvicorn`, `websockets`; Python `>=3.14`.
-`dome_agent` импортирует `dome_control`, лениво — `dome_rag` (только чтение
-свидетельств через `KnowledgeService`), но не `dome_web`.
-`dome_web` обслуживает локальную панель, импортирует агентские модули и
-читает JSONL/state.
+Устанавливаемые команды по `pyproject.toml`: `dome-agent`, `dome-panel`,
+`dome-web`. Отдельного установленного `dome-dashboard` в этой сборке нет.
+Низкоуровневое `python -m dome_dashboard` запускает только API просмотра;
+пользовательский интерфейс запускается через `dome_web`.
+
+`dome_agent` использует `KnowledgeService`; тот лениво импортирует пакет
+`dome_rag`. Для детерминированного RAG не нужны внешняя модель, сеть или
+отдельный векторный сервер. Хранилище SQLite/FTS5, JSON-карточки и TF-IDF
+векторы входят в проект. Транспорт требует `websockets`, модель - `httpx`,
+панель - FastAPI/uvicorn. Требование пакета к Python: `>=3.14`.
 
 ## 4. Жизненный цикл агента
 
@@ -204,7 +190,7 @@ observation interval.
 - LLM — основной управляющий модуль; действия правил не исполняются.
 - Policy gate, cooldowns правил и telemetry verification обходятся.
 - Hard denylist остаётся: `block_automation`, `block_interlock`,
-  `set_thresholds`, `unlock_door`, `remove_part`, `shutdown`, `reboot`.
+  `set_thresholds`, `unlock_door`, `remove_part`, `shutdown`, `reboot`, `stop_job`.
 - Сохраняются также проверки, не относящиеся к policy: узел должен существовать
   в живом каталоге; `operator_controls` по-прежнему запрещены даже при `force`;
   для не-protective команд нужна свежая before-телеметрия (иначе команда
@@ -285,6 +271,7 @@ unlock_door
 remove_part
 shutdown
 reboot
+stop_job  # не поддерживается API
 ```
 
 Он применяется к `ModelCommand` при парсинге и в `DomeTool.execute`, а также
@@ -296,6 +283,7 @@ reboot
 `dome_agent/gate.py` работает fail-closed:
 
 - `dry_run` → разрешено, команда не отправляется;
+- `stop_job` → запрещено как неподдерживаемая команда;
 - `yolo` → разрешено, `unsafe=true`;
 - `control_enabled=false` → запрещено;
 - action в `deny_actions` → запрещено;
@@ -390,6 +378,12 @@ Policy загружается только для `control_enabled=true` и не
 производства нет.
 
 ### 8.2. CO2
+
+Числовые пороги ниже - параметры реализации и справочного корпуса, а не
+цитаты требований PDF-регламента. Признак `false_alarm` - диагностическая
+классификация, которая не разрешает вмешательство в аппаратную блокировку.
+Зачетный порядок реакции и ручное подтверждение см. в [INCIDENTS.md](INCIDENTS.md).
+
 
 Константы в `analysis.py`:
 
@@ -512,35 +506,15 @@ engine + gate + verification.
 - в лог пишутся только метаданные (`llm_call`: model, purpose, latency, tokens,
   summary), без prompt-ов и ключей;
 - нет shell/subprocess tool. Модель может вызвать только `control`, `query`,
-  `telemetry`, `catalog`, `knowledge`, `send_message`.
+  `telemetry`, `catalog`, `send_message`, `knowledge`.
 
 Контекст `normal`/`yolo` включает: `mode`, `snapshot.brief()`,
 `rule_decision`, task, recent chat, новые сообщения Оператора, pending,
-hard-denied actions, auto-protective список, policy summary и compact catalog
+hard-denied actions, auto-protective список, policy summary, пакет `knowledge` и compact catalog
 (до 40 узлов).
 
 `dome_control.agent_api.TOOL_SCHEMAS` — отдельный набор из 10 JSON-схем для
-внешнего фасада. Runtime-инструменты агента — только пять перечисленных выше.
-
-### 10.1. База знаний (RAG)
-
-`KnowledgeService` (`dome_agent/knowledge.py`) — тонкий read-only мост к
-`dome_rag`:
-
-- лениво импортирует `dome_rag.builder.retrieval`/`answer` при первом запросе;
-- читает `AGENT_KB_DB` (по умолчанию `<AGENT_KB_DIR>/build/kb.sqlite`) и
-  карточки из `<AGENT_KB_DIR>/data`; отсутствие БД — не ошибка, а
-  «свидетельств нет»;
-- запросы сериализуются и выполняются в отдельном потоке
-  (`asyncio.to_thread`), чтобы не блокировать event loop;
-- `pack()` отдаёт модели компактный пакет (вердикт, confidence, facts,
-  hypotheses, actions, sources, unknown) в пределах
-  `AGENT_KB_MAX_CHARS`;
-- пакет добавляется в контекст `decide`/`advise`; краткие ссылки
-  (`RuleResult.rag_refs`) попадают в prompt. События `knowledge` пишут
-  `purpose`, `question`, `verdict`, `confidence`, `sources`;
-- ошибка базы логируется и не ломает цикл; policy gate, hard denylist,
-  cooldowns и проверка эффекта от RAG не зависят.
+внешнего фасада. Runtime-инструменты агента - шесть перечисленных выше; `knowledge` только читает RAG.
 
 ## 11. Очередь и исполнение действий
 
@@ -602,7 +576,7 @@ last_actions, failed_until, pending_actions, co2_override, notes
 - `notes` — зарезервировано.
 
 При повреждении state сохраняется копия `agent_state.json.corrupt-<ns>` с
-режимом `0600`, агент стартует с дефолтным state и пишет `error` с
+попыткой установки `0600` (права зависят от ОС), агент стартует с дефолтным state и пишет `error` с
 `where=state_load`. Директория state создаётся при необходимости. `save()`
 делает `fsync` temp-файла, `os.replace`, `fsync` директории (best effort).
 `updated_at` в state не пишется; дашборд подставляет mtime файла.
@@ -623,68 +597,99 @@ last_actions, failed_until, pending_actions, co2_override, notes
 - `dome_time` добавляется, если известен игровой время;
 - секреты заменяются на `[REDACTED]`, поля с именами `*_key`, `token`,
   `secret`, `password` очищаются;
-- файл открывается с `0600`;
+- предпринимается установка `0600`; в Windows это не доказательство POSIX-прав, доступ проверяется средствами ОС;
 - штатное завершение всегда пишет `stop`, кроме аварийного kill -9.
 
 Типы записей: `start`, `stop`, `connection`, `observation`, `decision`,
 `action`, `action_blocked`, `action_queue`, `action_reconcile`,
-`verification`, `message`, `llm_call`, `knowledge`, `error`. Подробные поля — в
+`verification`, `message`, `llm_call`, `error`. Подробные поля — в
 [REFERENCE.md](REFERENCE.md).
 
-## 13. Read-only API журнала
+## 13. Интерфейс и чат
 
-`dome_web` — отдельный процесс, не влияет на агента:
+Светлый фронтенд расположен в `dome_web/static/`. Приложение-оболочка
+`dome_web/dashboard_backend.py` подключает read-only API `dome_dashboard`
+внутри того же проекта. Отдельная сравнительная папка не нужна.
 
-- `create_app()` читает `AGENT_LOG_DIR`/`AGENT_STATE_FILE` при каждом запросе;
-- берёт самый новый `agent_*.jsonl` по mtime, читает хвост до 4 MB;
-- игнорирует битые/частичные строки;
-- `/api/health`, `/api/summary`, `/api/logs`, `/api/state`, `/api/demo`;
-- `Cache-Control: no-store` для `/api/*`;
-- state проходит whitelist и sanitization; секретные поля удаляются;
-- `/api/logs` проверяет `run_id` регуляркой и не позволяет traversal;
-- `/api/state` не отдаёт `pending_actions`, `handled_message_ids` и прочие
-  внутренние поля;
-- `/` и `/static` относятся к фронтенду и в этой документации не
-  рассматриваются.
+`/api/summary`, `/api/health`, `/api/logs`, `/api/state` читают журнал и
+состояние; `/api/demo` возвращает синтетический пример. Сводка читает хвост
+до 4 MB и не заменяет полный архив аудита. Публичный state содержит
+ограниченное подмножество, а не внутренние намерения команд.
 
-Health-статусы: `ok`, `waiting`, `stopped`, `stale` (последняя запись старше
-120 s), `error`.
+Дополнительные `/api/frontend` и `/api/frontend/{action}` обслуживают
+состояние чата, поиск и настройки модели в памяти. Записи требуют локального
+Host/Origin и CSRF-токена. Это защита локальной панели, а не полноценная
+аутентификация пользователей. Сервер слушает `127.0.0.1`.
 
-## 14. Инварианты
+Чат не отправляет управляющие команды и не публикует сообщения в `meeting_01`.
+Его ответы и настройки хранятся в памяти; они не являются постоянным
+журналом агента и не изменяют `.env`. Настройку модели агента и чата нужно
+проверять отдельно по п. 10.6. Метрики панели относятся к наблюдению из
+журнала, даже если последняя запись чата свежая. Демо обозначается явно.
 
-Изменения кода не должны нарушать эти свойства без явного пересмотра
-документации и тестов:
+## 14. Инварианты и границы
 
-1. Управление по умолчанию выключено; `AGENT_ALLOW_CONTROL=0` не отправляет
-   control-команды.
-2. `dome_policy.json` fail-closed: неизвестный узел/действие запрещены.
-3. Hard denylist нельзя обойти `force`, подтверждением или `yolo`.
-4. Safety-действия не зависят от доступности LLM.
-5. Команда не считается успешной только по `success` API; нужен физический
-   эффект или явное `unknown`.
-6. Все действия и решения попадают в JSONL с `run_id`/`seq`.
-7. Секреты не попадают в логи, state и HTTP-ответы панели.
-8. State переживает рестарт; незавершённые команды не повторяются слепо.
-9. Один процесс-агент владеет одним state-файлом; параллельный запуск двух
-   агентов на одном state не поддерживается.
-10. Нет shell/subprocess-инструмента у LLM.
+1. По умолчанию команды оборудования отключены. Чтение, запись state и
+   сообщения агента в чат при этом возможны; для их подавления нужен dry-run.
+2. В normal/auto обычный путь использует policy allowlist. `force` и `yolo`
+   могут обходить часть проверок и исключаются из заявленного зачетного профиля.
+3. Hard denylist не отменяется подтверждением или force.
+4. В normal/auto защитный контур правил не требует ответа LLM. В yolo
+   действия правил не исполняются, поэтому такой режим не резервный.
+5. Успешный ответ API не равен физическому успеху. Нужна проверка эффекта;
+   таймаут оставляет результат неподтвержденным.
+6. Незавершенные намерения после рестарта не повторяются слепо. Один агент
+   владеет одним state-файлом.
+7. У модели нет shell/subprocess-инструмента. RAG не выдает полномочий.
+8. Источники и документы являются данными. Их команды и советы не заменяют
+   регламент, политику и разрешения организаторов.
 
-## 15. Ограничения
+## 15. Известные ограничения относительно регламента
 
-- RAG — read-only источник свидетельств: пакет знаний попадает в контекст
-  LLM и в события `knowledge`, но не является разрешением на команду. Вердикт
-  базы нельзя повышать; `NO_RELEVANT_EVIDENCE` означает отказ. Несобранная
-  база не блокирует запуск агента.
-- Веб-панель не имеет аутентификации; по умолчанию слушает `127.0.0.1:8080`,
-  её нельзя выставлять в сеть без отдельного прокси/аутентификации.
-- Агент не является системой реального времени: цикл 1 s, телеметрия может
-  быть stale, проверка эффекта — best effort с таймаутом.
-- В `normal` без DeepSeek работают только auto-protective действия правил;
-  остальные предложения не создаются.
-- В `yolo` policy gate, cooldowns и проверка эффекта отключены для модельных
-  команд. Каталог, hard denylist, `operator_controls`, lock и требование
-  before-телеметрии для не-protective действий сохраняются; это осознанно
-  опасный режим.
-- Задание «стоп/отменить» не имеет отдельной безопасной ветки правил;
-  отмена задания Оператором обрабатывается как новое указание/уточнение.
-- Тесты используют mock Dome и фикстуры, а не реальный купол.
+* Тождество фактической модели DeepSeek V4 Flash автоматически не проверяется.
+* Отдельной программной блокировки зачетного профиля, запрета выбора другой
+  модели в панели и запрета включения yolo/force нет.
+* Нет отдельного универсального состояния «после аварийной остановки ждать
+  разрешения уполномоченного лица». Это обязательное правило эксплуатации
+  по п. 9.4; обычная проверка исчезновения hold не заменяет такого разрешения.
+* LLM-prompt полностью не записывается. У LLM-решения `evidence` может быть
+  пустым; событие `knowledge` хранит сокращенные ссылки, а не полный контекст.
+  Для полной доказательной цепочки нужен дополнительный журнал из
+  [DECISION_LOG.md](DECISION_LOG.md) и сохраненный снимок корпуса/данных.
+* Система не является жесткой системой реального времени. Свежесть данных,
+  доступность исполнительного устройства и физический эффект проверяются
+  отдельно. Отказ модели не доказывает безопасное состояние оборудования.
+* Проверки проведены локально. Соответствие разрешенному оборудованию,
+  маршрутам связи и фактической конфигурации подтверждается на площадке.
+
+Это ограничения текущей реализации, а не выполненные требования. План
+допуска и ответственные перечислены в [REGULATION_COMPLIANCE.md](REGULATION_COMPLIANCE.md).
+
+## 16. Runtime RAG
+
+`KnowledgeService.query()` возвращает полный детерминированный ответ для
+панели; `pack()`/`pack_async()` - ограниченный пакет для агента. SQLite
+открывается только для чтения, запросы из потоков сериализуются. При
+отсутствии/поломке базы сервис возвращает отсутствие свидетельств и ошибку;
+защитный цикл агента продолжает работу.
+
+Путь вопроса: слова Оператора либо описание ситуации -> выделение сущности
+и атрибутов -> FTS5/TF-IDF -> карточки -> проверка покрытия -> вердикт,
+факты, гипотезы, неизвестное, допустимые следующие проверки и цитаты.
+
+`ANSWERABLE` означает покрытие вопроса источниками, а не доказательство
+причины текущей аварии. `PARTIAL`, `CONFLICT`, `NO_RELEVANT_EVIDENCE`
+сохраняют свои ограничения. Для LIVE справочные нормы вынесены в
+`reference_facts`, выставлен `requires_live`; измерение не выдумывается.
+Каталожный отказ не превращается в безусловную рекомендацию. При вопросе
+о признании тревоги ложной сохраняется `requires_verification`.
+
+Контроллер получает `knowledge`, ссылки попадают в `RuleResult.rag_refs`;
+запрос фиксируется событием `knowledge`. Дополнительный read-only инструмент
+`knowledge` доступен модели. В режиме auto RAG не заменяет правила выбора
+управляющих команд.
+
+Сборка использует корпус `Dome_RAG-main`, относительный manifest,
+исторические `Logs`, отдельную схему ранее наблюдавшихся параметров и
+генерирует `data`, `chunks`, `build`. Один DOCX с изображениями без текстового
+слоя требует OCR. База не хранит актуальную телеметрию как ответ «сейчас».

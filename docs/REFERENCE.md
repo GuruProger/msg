@@ -1,4 +1,4 @@
-# Справочник backend
+# Справочник проекта
 
 ## 1. Переменные окружения
 
@@ -14,7 +14,7 @@
 | `DOME_KEY_FILE` | — | путь | Файл со строкой `team: <key>` |
 | `DEEPSEEK_API_KEY` | пусто | строка | Включает LLM; без него LLM недоступна |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | URL | База API; `/chat/completions` добавляется автоматически |
-| `DEEPSEEK_MODEL` | `deepseek-chat` | строка | Модель |
+| `DEEPSEEK_MODEL` | `deepseek-chat` в коде | строка | Для зачета требуется подтвержденная DeepSeek V4 Flash; значение по умолчанию не доказывает соответствие |
 | `DEEPSEEK_TIMEOUT` | `30` | 1..120 | Таймаут HTTP-запроса LLM, s |
 | `AGENT_NAME` | `team3-agent` | непустая строка | Имя агента в чате/логе |
 | `AGENT_LOG_DIR` | `logs` | путь | Каталог JSONL |
@@ -33,11 +33,8 @@
 | `AGENT_LLM` | `1` | bool | Разрешить LLM |
 | `AGENT_LLM_MIN_INTERVAL` | `30` | ≥0 | Минимальный интервал LLM-вызовов, s |
 | `AGENT_LLM_MAX_CALLS_PER_HOUR` | `60` | ≥1 | Часовой бюджет LLM |
-| `AGENT_KB` / `AGENT_KB_ENABLED` | `1` | bool | Включить read-only базу знаний |
-| `AGENT_KB_DIR` | `dome_rag` | путь | Каталог `dome_rag` (`data/`, `build/`) |
-| `AGENT_KB_DB` | `<kb_dir>/build/kb.sqlite` | путь | SQLite-база знаний |
-| `AGENT_KB_MAX_CARDS` | `6` | ≥1 | Максимум карточек в пакете |
-| `AGENT_KB_MAX_CHARS` | `6000` | ≥800 | Лимит размера пакета, символов |
+| `DASHBOARD_HOST` | `127.0.0.1` | host | Bind дашборда |
+| `DASHBOARD_PORT` | `8080` | int | Порт дашборда; нечисловое значение → 8080 |
 
 Bool-значения: `1/true/yes/on/y` и `0/false/no/off/n` (case-insensitive).
 Пустая строка для bool означает default.
@@ -54,8 +51,6 @@ Bool-значения: `1/true/yes/on/y` и `0/false/no/off/n` (case-insensitive
 - `AGENT_LLM_MIN_INTERVAL >= 0`;
 - `AGENT_LLM_MAX_CALLS_PER_HOUR >= 1`;
 - `AGENT_RUN_SECONDS >= 0`;
-- `AGENT_KB_MAX_CARDS >= 1`;
-- `AGENT_KB_MAX_CHARS >= 800`;
 - `AGENT_MODE` из трёх значений;
 - `yolo` включает `control_enabled`, даже если `AGENT_ALLOW_CONTROL=0`.
 
@@ -63,7 +58,7 @@ Bool-значения: `1/true/yes/on/y` и `0/false/no/off/n` (case-insensitive
 dome_url, deepseek_base_url, deepseek_model, `llm_enabled` (фактическая
 доступность LLM: флаг и наличие ключа), dry_run, control_enabled, mode, yolo,
 policy_file, log_dir, state_file, таймауты, reconnect/guest, min_send_gap,
-run_seconds. Ключи не входят.
+run_seconds и настройки KB. Ключи не входят.
 
 ## 2. CLI агента
 
@@ -128,7 +123,7 @@ CLI-переопределения применяются после `.env`/ок
   действие каталога, но не отменяет `operator_controls` и не отменяет policy
   gate агента.
 
-Текущий allowlist:
+Текущий allowlist (факт содержимого policy, не разрешение организаторов):
 
 | Узел | Действия | Ограничения значений |
 |---|---|---|
@@ -138,8 +133,8 @@ CLI-переопределения применяются после `.env`/ок
 | `solar_inverter_01` | `set_fan`, `reset_error` | `set_fan`: `ON`/`OFF` |
 | `dizel_1` | `turn_on` | — |
 | `fume_extraction_01` | `turn_on` | — |
-| `printer_3d_01` | `start_job`, `resume`, `home`, `reconnect` | — |
-| `cnc_01` | `start_job`, `resume`, `home`, `reconnect` | — |
+| `printer_3d_01` | `start_job`, `resume`, `home`, `reconnect`, `stop_job` | `stop_job` есть в JSON, но блокируется исполнителем |
+| `cnc_01` | `start_job`, `resume`, `home`, `reconnect`, `stop_job` | `stop_job` есть в JSON, но блокируется исполнителем |
 
 `deny_nodes`: `access_control_01`, `dome_sealing_01`, `fire_suppression_01`.
 
@@ -148,7 +143,7 @@ CLI-переопределения применяются после `.env`/ок
 
 Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy:
 `block_automation`, `block_interlock`, `set_thresholds`, `unlock_door`,
-`remove_part`, `shutdown`, `reboot`.
+`remove_part`, `shutdown`, `reboot`, `stop_job` (не поддерживается API).
 
 ## 4. JSONL-лог
 
@@ -182,7 +177,7 @@ Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy
 | `verification` | Проверка эффекта | `ref`, `expected`, `observed`, `ok`, `error`, `waited_s`, `no_effect`, `unknown` |
 | `message` | Чат | `direction`, `sender`/`role`/`team`, `to`, `text`, `message_id`, `dry_run`, `sent` |
 | `llm_call` | Вызов LLM | `model`, `purpose`, `latency_ms`, `ok`, `error`, `summary`, `prompt_tokens`, `completion_tokens`, `context_chars` |
-| `knowledge` | Запрос к базе знаний | `purpose` (`control`/`advice`), `question`, `verdict`, `confidence`, `sources`; при сбое — `event=unavailable`, `error` |
+| `knowledge` | Запрос к RAG | `purpose`, `question`, `verdict`, `confidence`, сокращенные `sources`; для unavailable также `event`/`error` |
 | `error` | Исключение/ошибка | `where`, `error`, `traceback` и контекст |
 
 `decision.source`: `rules`, `llm`, `chat_epoch`.
@@ -196,7 +191,7 @@ Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy
 ### 4.3. Метрики observation
 
 `observation.metrics` содержит `co2_ppm`, `co2_source`, `co2_false_alarm`,
-`soc_pct`, `printer`, `cnc`, `alerts`, `task`. API журнала нормализует публичные
+`soc_pct`, `printer`, `cnc`, `alerts`, `task`. Дашборд нормализует публичные
 ключи `co2_ppm`, `soc_pct`, `printer`, `cnc`, `fume`, `power_w`; отсутствующие
 значения становятся `null`.
 
@@ -248,16 +243,17 @@ Hard denylist агента (`HARD_DENY_ACTIONS`) не зависит от policy
 - режим `0600`; родительская директория создаётся;
 - атомарная запись: temp + `fsync` + `os.replace` + `fsync` директории;
 - при повреждении — копия `.corrupt-<ns>` и сброс к default;
-- `pending_actions` не экспортируется API журнала;
-- `updated_at` не хранится, API журнала подставляет mtime;
+- `pending_actions` не экспортируется дашбордом;
+- `updated_at` не хранится, дашборд подставляет mtime;
 - параллельная работа двух агентов с одним state не поддерживается.
 
-## 6. HTTP API журнала
+## 6. HTTP API дашборда
 
-Запуск: `python -m dome_web [--backend-root PATH] [--port PORT]`
-(или `dome-web` после `pip install .`).
+Запуск пользовательской панели: `python launch_frontend.py --port 8080` или `dome-web --port 8080`.
+Низкоуровневый `python -m dome_dashboard [--host HOST] [--port PORT] [--reload]`
+сохраняет отдельный API просмотра. Console script `dome-dashboard` в текущем `pyproject.toml` не зарегистрирован.
 
-API — read-only. Все `/api/*` ответы получают `Cache-Control: no-store`.
+Дашборд — read-only. Все `/api/*` ответы получают `Cache-Control: no-store`.
 Ошибки чтения лога/каталога возвращаются как HTTP 500; неверный `run_id` — 400.
 
 ### `GET /api/health`
@@ -340,10 +336,29 @@ task, last_message_id, co2_override, last_actions, failed_until, notes, updated_
 Полная демонстрационная сводка без чтения файлов и сети. Полезно для проверки
 UI/API без запущенного агента.
 
-### `/` и `/static/*`
+### `/`, `/ui/*`, `/api/frontend`
 
-Отдают фронтенд, если он установлен. В backend-документации не описываются.
-Если статики нет, `/` возвращает 503.
+В оболочке `dome_web` корневой `/` отдает мой светлый HTML; `/ui/*` - его
+локальные ресурсы. `GET /api/frontend` возвращает csrf, модель/адрес/флаг,
+признак заданного ключа, историю чата в памяти, busy, состояние KB и пути
+источников. Сам ключ не возвращается.
+
+`POST /api/frontend/{action}` требует локальный Host, допустимый Origin и
+`X-Dome-CSRF`. Тело - JSON-объект не более 16000 байт.
+
+| action | Тело | Результат |
+|---|---|---|
+| `knowledge` | `query`, 2..500 символов | `ok`, `engine`, полный `answer`; при недоступности базы `ok=false`, `error` |
+| `chat` | `text`, 2..2000; необязательный `demo` | `ok`, `reply`: text, engine, verdict, sources, requires_live |
+| `settings` | model, base_url, api_key, llm_enabled | Настройки только в памяти; base_url http/https, смена адреса очищает прежний ключ |
+
+`/api/control` отсутствует; action `control` не добавлен. Встроенный чат не
+является каналом подтверждения команд агента в `meeting_01`. В финальной
+игре менять модель на произвольную через settings нельзя по п. 10.6, хотя
+сам код принимает строку и не проверяет тождество модели.
+
+Низкоуровневые `/static/*` относятся к старой оболочке API. Ее собственный
+`/` может вернуть 503 без статики; пользовательская панель использует `/ui`.
 
 ## 7. `dome_control.agent_api`
 
@@ -374,7 +389,7 @@ UI/API без запущенного агента.
 `dome_get_device`, `dome_control_device`, `dome_query_device`,
 `dome_read_messages`, `dome_post_message`, `dome_whoami`, `dome_ping`.
 Это не runtime-набор LLM: у агента только `control`, `query`, `telemetry`,
-`catalog`, `knowledge`, `send_message`.
+`catalog`, `send_message`.
 
 ## 8. Ошибки и исключения
 
@@ -400,7 +415,7 @@ UI/API без запущенного агента.
 python -m unittest discover -s tests
 ```
 
-Снимок: **259 tests, OK** (2026-10-27, Python 3.14.8).
+Последний сохраненный отчет интеграции: **259 Python tests, OK**, 22 проверки логики интерфейса, 12 браузерных сценариев (27.10.2026, комплектный Python 3.12.14). Это результаты прежней интеграционной проверки, не новый прогон на настоящем Куполе и не подтверждение допуска.
 
 | Файл | Что покрывает |
 |---|---|
@@ -410,11 +425,10 @@ python -m unittest discover -s tests
 | `tests/test_agent_integration.py` | сквозной сценарий: агент читает задание Оператора и запускает печать через mock Dome |
 | `tests/test_client_telemetry.py` | telemetry freshness, meeting clear, retry policy |
 | `tests/test_domain.py` | catalog/alias/validation/diff |
-| `tests/test_dashboard.py` | health/summary/logs/state/demo, sanitization, corrupt lines, cache |
-| `tests/test_dome_rag.py` | сборка/поиск/ответы RAG, покрытие и карточки |
-| `tests/test_integrated_knowledge.py` | связка `KnowledgeService` с агентом и `dome_rag` |
-| `tests/test_dome_web.py`, `tests/test_dome_web_live.py` | backend `dome_web` и live-сценарии |
-| `tests/test_frontend_backend.py` | контракт фронтенд↔backend |
+| `tests/test_dome_rag.py` | Карточки, покрытие, отказы, интеграция RAG с агентом |
+| `tests/test_integrated_knowledge.py` | Общая база агента и чата, LIVE, ложная тревога, защита, сохранение БД при сбое |
+| `tests/test_frontend_backend.py` | Оболочка API, CSRF, отсутствие команд через панель |
+| `tests/test_frontend_insights.cjs` | Свежесть, объяснения состояний и подтверждение эффекта |
 | `tests/mock_dome_api.py` | локальный WebSocket mock (5 узлов в тестовом каталоге) |
 | `tests/acceptance_dome_cli.py` | acceptance-сценарий CLI |
 | `tests/fixtures/telemetry.jsonl` | базовая телеметрия |
@@ -422,7 +436,7 @@ python -m unittest discover -s tests
 Дополнительно:
 
 ```bash
-python -m compileall -q dome_agent dome_control dome_web tests
+python -m compileall -q dome_agent dome_control dome_dashboard tests
 python tests/acceptance_dome_cli.py
 ```
 
@@ -444,12 +458,48 @@ python tests/acceptance_dome_cli.py
 | `dome_agent/logging.py` | `AgentLog`, `VALID_KINDS` |
 | `dome_agent/config.py` | `AgentConfig`, `redact_mapping`, `AGENT_VERSION` |
 | `dome_agent/llm.py` | `DeepSeekAdvisor`, `Advice`, `parse_advice` |
-| `dome_agent/knowledge.py` | `KnowledgeService`, `_pack_refs`, read-only мост к `dome_rag` |
 | `dome_control/client.py` | `DomeClient`, `retry_policy`, transport errors |
 | `dome_control/agent_api.py` | `DomeAgentAPI`, `TOOL_SCHEMAS`, `tool_specs` |
 | `dome_control/domain.py` | catalog/filter/alias/validation/diff |
 | `dome_control/cli.py` | `dome-panel` CLI |
 | `dome_control/panel.py` | форматирование, `.env`, key-файл, demo |
-| `dome_web/journal_api.py` | `create_app`, API endpoints |
+| `dome_dashboard/app.py` | `create_app`, API endpoints |
+| `dome_dashboard/__main__.py` | Низкоуровневый CLI API просмотра |
+| `dome_agent/knowledge.py` | `KnowledgeService`, query, pack, pack_async |
+| `dome_web/dashboard_backend.py` | `create_frontend`, общий HTTP-сервер и маршруты чата |
+| `dome_web/conversation.py` | Справочный разговор, сохранение вердиктов RAG |
+| `dome_rag/builder/answer.py` | Ответ, LIVE, гипотезы, ограничения и цитаты |
 | `dome_policy.json` | allowlist/denylist |
 | `.env.example` | шаблон конфигурации |
+
+
+## 11. RAG: настройки и ответ
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `AGENT_KB_ENABLED` | true | Чтение RAG; совместимый алиас `AGENT_KB`, основной параметр имеет приоритет |
+| `AGENT_KB_DIR` | `dome_rag` относительно установленного пакета | Каталог data/build |
+| `AGENT_KB_DB` | `<kb_dir>/build/kb.sqlite` | SQLite; явный путь может быть переопределен |
+| `AGENT_KB_MAX_CARDS` | 6, минимум 1 | Размер извлеченного контекста |
+| `AGENT_KB_MAX_CHARS` | 6000, минимум 800 | Бюджет компактного пакета |
+
+`KnowledgeService.query(question)` возвращает полный ответ либо `None` при
+неработоспособной базе. `pack()`/`pack_async()` возвращают компактные
+свидетельства; честный отказ базы остается пакетом с вердиктом, а не None.
+
+| Поле ответа | Смысл |
+|---|---|
+| `verdict` | ANSWERABLE, PARTIAL, CONFLICT, NO_RELEVANT_EVIDENCE |
+| `facts` | Утверждения источников, не поток текущих измерений |
+| `reference_facts` | Справочные сведения, отделенные от LIVE-запроса |
+| `hypotheses` | Каталоги, теория и версии, которые не доказывают текущий отказ |
+| `unknown` | Недостающие данные, ограничения и противоречия |
+| `actions` | Следующие шаги с проверкой условий; не полномочие на выполнение |
+| `citations` / `sources` | Ссылки на фактически использованные карточки / их компактный вариант |
+| `requires_live` | Для ответа нужен свежий API-снимок |
+| `requires_verification` | Причину текущего инцидента нельзя установить по описанию вопроса |
+| `confidence` | Эвристическая оценка покрытия источниками, не вероятность безопасности |
+
+Основные CLI: `python -m dome_rag.kb stats`, `ask "вопрос"`, `doctor`,
+`build`. Пересборка - отдельная подготовительная операция, не команда LLM.
+Канонические API-идентификаторы содержат подчеркивания: `list_files`, `node_id`.
