@@ -404,6 +404,33 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(summary["metrics"]["co2_ppm"], 700)
         self.assertEqual(summary["run"]["agent"]["name"], "team3-agent")
 
+    def test_log_cache_refreshes_when_file_grows(self) -> None:
+        path = self._write_log(
+            [self._record("start", 1, 30, agent="team3-agent", version="abc1234")]
+        )
+        first = self.client.get("/api/health").json()
+        self.assertEqual(first["records_loaded"], 1)
+
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    self._record(
+                        "observation",
+                        2,
+                        5,
+                        summary="new observation",
+                        metrics={"co2_ppm": 700},
+                        anomalies=[],
+                    )
+                )
+                + "\n"
+            )
+
+        second = self.client.get("/api/summary").json()
+        self.assertEqual(second["health"]["records_loaded"], 2)
+        self.assertEqual(second["counts"]["records"], 2)
+        self.assertEqual(second["observation"]["summary"], "new observation")
+
     def test_demo_is_complete_and_populated(self) -> None:
         response = self.client.get("/api/demo")
 

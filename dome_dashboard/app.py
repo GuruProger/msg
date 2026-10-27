@@ -13,6 +13,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
@@ -197,8 +198,26 @@ def _latest_log_file(log_dir: Path) -> Path | None:
 
 
 def _read_log_file(path: Path) -> tuple[tuple[dict[str, Any], ...], bool]:
+    """Read a bounded tail, reusing parsed records until the file changes."""
+    stat = path.stat()
+    return _read_log_file_cached(str(path), stat.st_size, stat.st_mtime_ns)
+
+
+@lru_cache(maxsize=2)
+def _read_log_file_cached(
+    path_text: str,
+    size: int,
+    mtime_ns: int,
+) -> tuple[tuple[dict[str, Any], ...], bool]:
+    """Cache the parsed tail for the current size/mtime of one log file."""
+    return _read_log_file_uncached(Path(path_text), size)
+
+
+def _read_log_file_uncached(
+    path: Path,
+    size: int,
+) -> tuple[tuple[dict[str, Any], ...], bool]:
     """Read a bounded tail of a JSONL log, ignoring corrupt/partial lines."""
-    size = path.stat().st_size
     with path.open("rb") as handle:
         if size > MAX_TAIL_BYTES:
             handle.seek(size - MAX_TAIL_BYTES)
