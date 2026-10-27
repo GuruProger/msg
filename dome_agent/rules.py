@@ -808,8 +808,15 @@ class RuleEngine:
                 return False, "IL_SMOKE неизвестен; автоматический resume запрещён"
             if _interlock_tripped(snapshot, "IL_SMOKE"):
                 return False, f"IL_SMOKE {state}; нужен сброс Оператором"
+            if not snapshot.online("fire_suppression_01"):
+                return False, "пожарная автоматика недоступна; автоматический resume запрещён"
             fire = snapshot.node("fire_suppression_01")
-            if as_bool(fire.get("alarm")) or _state(fire.get("state")) not in {"READY", ""}:
+            if (
+                as_bool(fire.get("alarm"))
+                or as_bool(fire.get("automation_blocked"))
+                or as_bool(fire.get("ready")) is not True
+                or _state(fire.get("state")) != "READY"
+            ):
                 return False, "пожарная автоматика не готова"
             return True, "дым не обнаружен, IL_SMOKE сброшен"
         if reason == "IL_VOC_BOX":
