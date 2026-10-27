@@ -208,6 +208,7 @@ class ActionSpec:
     reason: str = ""
     verify: bool = True
     priority: int = 50
+    depends_on: tuple[str, ...] = ()
     expect: Any | None = field(default=None, compare=False, repr=False)
 
     def request(self) -> dict[str, Any]:
@@ -229,6 +230,7 @@ class ActionSpec:
             "reason": self.reason,
             "verify": self.verify,
             "priority": self.priority,
+            "depends_on": list(self.depends_on),
             "expect": getattr(self.expect, "description", None),
         }
 
@@ -308,6 +310,7 @@ class RuleEngine:
         cooldown_s: float = 0.0,
         verify: bool = True,
         priority: int = 50,
+        depends_on: Iterable[str] = (),
     ) -> ActionSpec | None:
         if not self._allowed(key, cooldown_s):
             return None
@@ -321,6 +324,7 @@ class RuleEngine:
             reason=reason,
             verify=verify,
             priority=priority,
+            depends_on=tuple(depends_on),
             expect=expected_effect(
                 node_id,
                 action,
@@ -387,6 +391,7 @@ class RuleEngine:
             )
             if trust_action:
                 actions.append(trust_action)
+            primary_action: ActionSpec | None = None
             if alternate:
                 primary_action = self._action(
                     f"co2_primary:{alternate}",
@@ -396,22 +401,41 @@ class RuleEngine:
                     reason=f"переключить основной датчик CO2 на {alternate}",
                     cooldown_s=1800,
                     priority=100,
+                    depends_on=(trust_action.key,) if trust_action else (),
                 )
                 if primary_action:
                     actions.append(primary_action)
-            if _interlock_known_tripped(snapshot, "IL_CO2"):
+            reset_action: ActionSpec | None = None
+            if _interlock_known_tripped(snapshot, "IL_CO2") and primary_action is not None:
                 reset_action = self._action(
                     "co2_reset_interlock",
                     "dome_automation_01",
                     "reset_interlock",
                     value="IL_CO2",
-                    reason="ложное срабатывание IL_CO2, причина устранена сменой источника",
+                    reason="ложное срабатывание IL_CO2, сброс только после подтверждённой смены источника",
                     cooldown_s=300,
                     priority=100,
+                    depends_on=(primary_action.key,),
                 )
                 if reset_action:
                     actions.append(reset_action)
             if actions:
+                if reset_action is not None:
+                    message = (
+                        f"Датчик {suspect} дал ложное значение CO2; переключаю основной "
+                        f"источник на {alternate} и сниму IL_CO2 только после подтверждения "
+                        "переключения."
+                    )
+                elif primary_action is not None:
+                    message = (
+                        f"Датчик {suspect} дал ложное значение CO2; переключаю основной "
+                        f"источник на {alternate}. IL_CO2 автоматически не снимаю."
+                    )
+                else:
+                    message = (
+                        f"Датчик {suspect} дал ложное значение CO2; альтернативного "
+                        "источника нет, IL_CO2 не сбрасываю автоматически."
+                    )
                 return RuleResult(
                     situation="IL_CO2 мог сработать по ложному датчику",
                     cause=f"изолированное показание {suspect}",
@@ -422,10 +446,7 @@ class RuleEngine:
                     ],
                     plan=[action.reason for action in actions],
                     actions=actions,
-                    messages=[OutgoingMessage(
-                        f"Датчик {suspect} дал ложное значение CO2; основной источник переключён, интерлок снимается.",
-                        "co2_false_alarm",
-                    )],
+                    messages=[OutgoingMessage(message, "co2_false_alarm")],
                 )
 
         # A real CO2 event: improve ventilation, but never resume production.
