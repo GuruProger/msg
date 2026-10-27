@@ -1453,6 +1453,38 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
+    async def test_failed_action_notifies_operator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False)
+            data = base_telemetry()
+            line8 = next(
+                line for line in data["nodes"]["smart_panel_01"]["lines"] if int(line["line"]) == 8
+            )
+            line8["state"] = "ON"
+            api = NoEffectAPI(data)
+            agent = DomeAgent(config, api=api)
+            self.addAsyncCleanup(agent._shutdown)
+            agent._role = "team"
+            action = ActionSpec(
+                key="test-line-off-notify",
+                node_id="smart_panel_01",
+                action="line_off",
+                value=8,
+                reason="test notify",
+                expect=expected_effect(
+                    "smart_panel_01",
+                    "line_off",
+                    8,
+                    timeout_s=0.05,
+                ),
+            )
+            await agent._run_action(action, None, protective=False)
+            self.assertTrue(api.sent_messages)
+            self.assertTrue(
+                any("не выполнена" in item["text"] or "не подтверждена" in item["text"]
+                    for item in api.sent_messages)
+            )
+
     async def test_duplicate_pending_action_is_blocked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=False)

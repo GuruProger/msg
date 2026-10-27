@@ -937,7 +937,10 @@ class DomeAgent:
             raise
         if outcome in {"running", "pending"}:
             return
-        self._set_action_status(action.key, outcome or "succeeded")
+        status = outcome or "succeeded"
+        self._set_action_status(action.key, status)
+        if status in {"failed", "unknown"} and not self.config.dry_run:
+            await self._notify_action_failure(action, status)
 
     def _enqueue_action(
         self,
@@ -1366,6 +1369,31 @@ class DomeAgent:
             )
         except OSError as exc:
             self._log_exception("state_action", exc)
+
+    async def _notify_action_failure(
+        self,
+        action: ActionSpec,
+        outcome: str,
+    ) -> None:
+        """Tell the operator when a command was rejected or not confirmed."""
+        verb = "не выполнена" if outcome == "failed" else "не подтверждена"
+        text = (
+            f"{action.node_id}: команда {action.action} {verb}. "
+            "Проверьте состояние вручную."
+        )
+        try:
+            await self._send_operator_message(
+                text,
+                dedupe_key=f"action:{action.key}:{outcome}",
+                min_interval_s=300.0,
+            )
+        except Exception as exc:
+            self._log_exception(
+                "action_notify",
+                exc,
+                node_id=action.node_id,
+                action=action.action,
+            )
 
     async def _send_operator_message(
         self,
