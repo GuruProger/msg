@@ -38,6 +38,7 @@ TIMELINE_KINDS: Final = frozenset(
         "decision",
         "action",
         "action_blocked",
+        "action_reconcile",
         "verification",
         "message",
         "llm_call",
@@ -569,6 +570,10 @@ def _timeline_entry(record: Mapping[str, Any]) -> dict[str, Any]:
     elif kind == "action_blocked":
         title = "Action blocked"
         detail = _as_text(record.get("reason"), 500)
+        status = "warning"
+    elif kind == "action_reconcile":
+        title = "Action reconciliation"
+        detail = _as_text(record.get("expected"), 500)
         status = "warning"
     elif kind == "verification":
         title = "Verification"

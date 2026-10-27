@@ -26,6 +26,7 @@ def _default_state() -> dict[str, Any]:
         "operator_requests": {},
         "last_actions": {},
         "failed_until": {},
+        "pending_actions": {},
         "co2_override": None,
         "notes": {},
     }
@@ -85,6 +86,8 @@ class StateStore:
             merged["last_actions"] = {}
         if not isinstance(merged.get("failed_until"), dict):
             merged["failed_until"] = {}
+        if not isinstance(merged.get("pending_actions"), dict):
+            merged["pending_actions"] = {}
         if not isinstance(merged.get("notes"), dict):
             merged["notes"] = {}
         self.data = merged
@@ -191,6 +194,79 @@ class StateStore:
         return int(message_id) in handled
 
     # --- action / notification guards --------------------------------
+
+    def begin_action(
+        self,
+        key: str,
+        *,
+        request: dict[str, Any],
+        ref: int | None,
+        expected: str,
+        now: float | None = None,
+    ) -> None:
+        """Persist an action intent before the command leaves the agent."""
+        now = time.time() if now is None else now
+        pending = self.data.get("pending_actions")
+        if not isinstance(pending, dict):
+            pending = {}
+            self.data["pending_actions"] = pending
+        pending[str(key)] = {
+            "request": dict(request),
+            "ref": ref,
+            "expected": expected,
+            "at": float(now),
+        }
+        if len(pending) > 50:
+            ordered = sorted(
+                pending.items(),
+                key=lambda item: (
+                    _as_epoch(item[1].get("at"))
+                    if isinstance(item[1], dict)
+                    else 0.0
+                ),
+                reverse=True,
+            )[:50]
+            self.data["pending_actions"] = dict(ordered)
+        self.save()
+
+    def finish_action(self, key: str) -> None:
+        """Clear an intent after its outcome has been recorded."""
+        pending = self.data.get("pending_actions")
+        if not isinstance(pending, dict) or pending.pop(str(key), None) is None:
+            return
+        self.save()
+
+    def reconcile_pending_actions(
+        self,
+        cooldown_s: float,
+        *,
+        now: float | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Return intents left by a crash and block their keys for a while.
+
+        A process can die after sending a command but before observing its
+        effect.  We cannot know whether that command reached the dome, so the
+        safe recovery is to mark the key as failed/unknown and delay a repeat.
+        """
+        pending = self.data.get("pending_actions")
+        if not isinstance(pending, dict) or not pending:
+            return {}
+        recovered = {
+            str(key): dict(entry)
+            for key, entry in pending.items()
+            if isinstance(entry, dict)
+        }
+        self.data["pending_actions"] = {}
+        failures = self.data.get("failed_until")
+        if not isinstance(failures, dict):
+            failures = {}
+            self.data["failed_until"] = failures
+        until = (time.time() if now is None else now) + max(0.0, float(cooldown_s))
+        for key in recovered:
+            failures[key] = max(_as_epoch(failures.get(key)), until)
+        self._prune_failed_until()
+        self.save()
+        return recovered
 
     def action_allowed(self, key: str, cooldown_s: float, *, now: float | None = None) -> bool:
         now = time.time() if now is None else now

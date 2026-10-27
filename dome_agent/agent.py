@@ -215,6 +215,7 @@ class DomeAgent:
                     else None
                 ),
             )
+        self._reconcile_pending_actions()
         try:
             while not self._stop.is_set():
                 if self._past_deadline():
@@ -998,6 +999,28 @@ class DomeAgent:
 
         verify = action.verify and not self.config.yolo
         allow_without_before = is_auto_protective(action)
+        intent_started = False
+        outcome: str | None = None
+        if not self.config.dry_run:
+            try:
+                self.state.begin_action(
+                    action.key,
+                    request=request,
+                    ref=decision_ref,
+                    expected=expect.description,
+                )
+                intent_started = True
+            except OSError as exc:
+                self._log_exception("state_intent", exc)
+                self._log_pending_block(
+                    action,
+                    request,
+                    decision_ref,
+                    "cannot persist action intent",
+                    expect.description,
+                )
+                self._release_action_key(lock_key)
+                return "blocked"
         started = time.perf_counter()
         try:
             if action.value is NO_VALUE:
@@ -1033,6 +1056,7 @@ class DomeAgent:
                         expect=expect.description,
                         source="before_telemetry",
                     )
+                outcome = "blocked"
                 return "blocked"
             success = bool(
                 result.get("success")
@@ -1108,7 +1132,16 @@ class DomeAgent:
                     )
                 except OSError as exc:
                     self._log_exception("state_co2", exc)
+            if not success:
+                outcome = "failed"
+                return "failed"
+            if not verified:
+                outcome = "unknown" if result.get("unknown") else "failed"
+                return outcome
+            outcome = "succeeded"
+            return "succeeded"
         except (DomeSessionRevoked, DomeConnectionError, DomeTimeout):
+            outcome = "unknown"
             self.stats["action_failures"] += 1
             self.log.write(
                 "action",
@@ -1128,6 +1161,7 @@ class DomeAgent:
                 )
             raise
         except Exception as exc:
+            outcome = "failed"
             self.stats["action_failures"] += 1
             self._log_exception("action", exc, node_id=action.node_id, action=action.action)
             self.log.write(
@@ -1148,12 +1182,12 @@ class DomeAgent:
                 )
             return "failed"
         finally:
+            if intent_started and outcome is not None:
+                try:
+                    self.state.finish_action(action.key)
+                except OSError as exc:
+                    self._log_exception("state_intent", exc)
             self._release_action_key(lock_key)
-        if not success:
-            return "failed"
-        if not verified:
-            return "unknown" if result.get("unknown") else "failed"
-        return "succeeded"
 
     @staticmethod
     def _action_lock_key(action: ActionSpec) -> str:
@@ -1249,6 +1283,26 @@ class DomeAgent:
             if expected.check(node) is True:
                 return True, expected.observe(node), None
         return False, expected.observe(last), last_error or "telemetry did not confirm action"
+
+    def _reconcile_pending_actions(self) -> None:
+        """Block actions whose outcome was lost when the process stopped."""
+        try:
+            recovered = self.state.reconcile_pending_actions(
+                ACTION_FAILURE_COOLDOWN_S
+            )
+        except OSError as exc:
+            self._log_exception("state_reconcile", exc)
+            return
+        for key, entry in recovered.items():
+            self.log.write(
+                "action_reconcile",
+                action=key,
+                request=entry.get("request"),
+                expected=entry.get("expected"),
+                ref=entry.get("ref"),
+                status="unknown",
+                started_at=entry.get("at"),
+            )
 
     def _mark_action(
         self,

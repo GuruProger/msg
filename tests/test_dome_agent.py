@@ -626,6 +626,42 @@ class LoggingStateTests(unittest.TestCase):
             self.assertLessEqual(len(state.data["operator_requests"]), 80)
             self.assertTrue(StateStore(path).action_succeeded("trigger-prune"))
 
+    def test_action_intent_is_persisted_and_reconciled(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            state = StateStore(path)
+            state.begin_action(
+                "line8-off",
+                request={
+                    "node_id": "smart_panel_01",
+                    "action": "line_off",
+                    "value": 8,
+                },
+                ref=42,
+                expected="smart_panel_01.lines[8].state = OFF",
+                now=100.0,
+            )
+
+            loaded = StateStore(path)
+            self.assertIn("line8-off", loaded.get("pending_actions"))
+            loaded.finish_action("line8-off")
+            self.assertEqual(StateStore(path).get("pending_actions"), {})
+
+            loaded.begin_action(
+                "line8-off",
+                request={"node_id": "smart_panel_01", "action": "line_off", "value": 8},
+                ref=43,
+                expected="smart_panel_01.lines[8].state = OFF",
+                now=200.0,
+            )
+            recovered = loaded.reconcile_pending_actions(30.0, now=200.0)
+
+            self.assertEqual(set(recovered), {"line8-off"})
+            self.assertEqual(recovered["line8-off"]["ref"], 43)
+            self.assertTrue(loaded.action_failed_recently("line8-off", now=201.0))
+            self.assertEqual(loaded.failure_remaining("line8-off", now=201.0), 29.0)
+            self.assertEqual(StateStore(path).get("pending_actions"), {})
+
     def test_log_is_jsonl_and_redacts_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log = AgentLog(tmp, secrets=("secret-value",))
@@ -887,6 +923,40 @@ class NoEffectAPI(FakeAPI):
 
 
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
+    async def test_startup_reconciles_pending_action_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = make_config(tmp, dry_run=False, mode="auto")
+            log = AgentLog(config.log_dir)
+            api = FakeAPI(base_telemetry())
+            agent = DomeAgent(config, api=api, log=log)
+            agent.state.begin_action(
+                "line8-off",
+                request={
+                    "type": "control",
+                    "node_id": "smart_panel_01",
+                    "action": "line_off",
+                    "value": 8,
+                },
+                ref=77,
+                expected="smart_panel_01.lines[8].state = OFF",
+                now=100.0,
+            )
+
+            agent._reconcile_pending_actions()
+            log.close()
+
+            records = read_logs(config.log_dir)
+            reconciled = [
+                record for record in records if record["kind"] == "action_reconcile"
+            ]
+            self.assertEqual(len(reconciled), 1)
+            self.assertEqual(reconciled[0]["action"], "line8-off")
+            self.assertEqual(reconciled[0]["status"], "unknown")
+            self.assertEqual(reconciled[0]["ref"], 77)
+            self.assertTrue(agent.state.action_failed_recently("line8-off"))
+            self.assertEqual(agent.state.get("pending_actions"), {})
+            await api.close()
+
     async def test_dry_run_false_co2_never_sends_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = make_config(tmp, dry_run=True, run_seconds=0.7)

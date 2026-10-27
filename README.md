@@ -93,8 +93,8 @@ Optional:
   `verify=false` and logs `unsafe: true`.
 - The only model tools are `control`, `query`, `telemetry`, `catalog`, and
   `send_message`. There is no shell/subprocess tool.
-- Persists the current task, chat cursor, cooldowns, and CO2 source override so a
-  restart does not duplicate or forget work.
+- Persists the current task, chat cursor, cooldowns, CO2 source override, and
+  pre-send action intents so a restart reconciles unknown command outcomes.
 - Ignores operator chat addressed to another team or agent.
 - Blocks CNC work when fume extraction is off, alarming, or below 50% airflow.
 - Treats CO2 as a false alarm only when an isolated high sensor is contradicted
@@ -106,7 +106,8 @@ Optional:
 
 Each run creates `logs/agent_<run_id>.jsonl` with flushed JSONL records:
 `start`, `connection`, `observation`, `decision`, `action`, `action_blocked`,
-`verification`, `message`, `llm_call`, `error`, `action_queue`, and `stop`.
+`action_reconcile`, `verification`, `message`, `llm_call`, `error`,
+`action_queue`, and `stop`.
 `decision.source` shows `rules` or `llm`; `action.source` shows `yolo`,
 `confirmed`, `confirmed_force`, or `auto`. Secrets are redacted before writing.
 A normal SIGINT/SIGTERM shutdown always writes the final `stop` record.

@@ -24,6 +24,7 @@ VALID_KINDS = {
     "action",
     "action_blocked",
     "action_queue",
+    "action_reconcile",
     "verification",
     "message",
     "llm_call",
